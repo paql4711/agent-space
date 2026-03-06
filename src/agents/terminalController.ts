@@ -34,15 +34,16 @@ export class TerminalController implements vscode.Disposable {
 		agent: Agent,
 		agentIndex: number,
 		resume = false,
-	): vscode.Terminal {
+	): vscode.Terminal | undefined {
 		const name = `[${feature.name}] ${agent.name}`;
 		const color = AGENT_COLORS[agentIndex % AGENT_COLORS.length];
 		const cwd = agent.worktreePath ?? feature.worktreePath;
 
 		const sessionName = this.tmux.sessionName(feature.id, agent.id);
 		const legacySessionName = this.tmux.legacySessionName(feature.id, agent.id);
+		let sessionReady = this.tmux.adoptSession(sessionName, legacySessionName);
 
-		if (!this.tmux.adoptSession(sessionName, legacySessionName)) {
+		if (!sessionReady) {
 			try {
 				const tool = this.toolRegistry.resolveAgentTool(agent.toolId);
 				const launchCommand = resume
@@ -50,9 +51,19 @@ export class TerminalController implements vscode.Disposable {
 					: this.toolRegistry.buildLaunchCommand(tool, agent.sessionId);
 				exec(this.tmux.createCommand(sessionName, launchCommand), { cwd });
 				this.tmux.configureSession(sessionName);
+				sessionReady = this.tmux.isSessionAlive(sessionName);
 			} catch (err) {
 				console.warn(`[TerminalController] tmux session create failed: ${err}`);
+				sessionReady = false;
 			}
+		}
+
+		if (!sessionReady) {
+			const tool = this.toolRegistry.resolveAgentTool(agent.toolId);
+			void vscode.window.showErrorMessage(
+				`Failed to start ${agent.name} with ${tool.name}. Check that the CLI is installed and launches from ${cwd}.`,
+			);
+			return undefined;
 		}
 
 		const { shellPath, shellArgs } = getTerminalShellArgs(sessionName);
@@ -84,7 +95,7 @@ export class TerminalController implements vscode.Disposable {
 		agent: Agent,
 		agentIndex: number,
 		resume = false,
-	): vscode.Terminal {
+	): vscode.Terminal | undefined {
 		const existing = this.terminals.get(agent.id);
 		if (existing) {
 			existing.show();

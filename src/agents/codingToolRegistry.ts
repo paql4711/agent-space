@@ -35,6 +35,23 @@ export class CodingToolRegistry {
 			.get<string>("defaultTool", "claude");
 	}
 
+	getAvailableTools(): CodingTool[] {
+		return this.getTools().filter((tool) => this.isToolAvailable(tool));
+	}
+
+	getPreferredAvailableTool(): CodingTool | undefined {
+		const availableTools = this.getAvailableTools();
+		if (availableTools.length === 0) {
+			return undefined;
+		}
+
+		const defaultToolId = this.getDefaultToolId();
+		return (
+			availableTools.find((tool) => tool.id === defaultToolId) ??
+			availableTools[0]
+		);
+	}
+
 	resolveAgentTool(toolId?: string): CodingTool {
 		const id = toolId ?? "claude";
 		return this.getTool(id) ?? BUILTIN_CODING_TOOLS[0];

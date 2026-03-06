@@ -69,13 +69,15 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(storageWatcher);
 
 	const toolRegistry = new CodingToolRegistry();
-
-	const defaultTool = toolRegistry.resolveAgentTool(
-		toolRegistry.getDefaultToolId(),
-	);
-	if (!toolRegistry.isToolAvailable(defaultTool)) {
+	const defaultTool = toolRegistry.resolveAgentTool(toolRegistry.getDefaultToolId());
+	const availableTools = toolRegistry.getAvailableTools();
+	if (availableTools.length === 0) {
 		vscode.window.showWarningMessage(
-			`${defaultTool.name} CLI not found. Install it to use Agent Mode.`,
+			"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
+		);
+	} else if (!toolRegistry.isToolAvailable(defaultTool)) {
+		vscode.window.showWarningMessage(
+			`${defaultTool.name} CLI not found. New agents will use ${availableTools[0].name} until the default tool is installed.`,
 		);
 	}
 
@@ -285,12 +287,15 @@ export function activate(context: vscode.ExtensionContext): void {
 					const feature = ctx.featureManager.createFeature(name, isolation);
 					activeFeatureId = feature.id;
 
-					// Auto-create first agent with default tool
-					const agent = ctx.agentManager.createAgent(
-						feature,
-						toolRegistry.getDefaultToolId(),
-					);
-					terminalController.createTerminal(feature, agent, 0);
+					const initialTool = toolRegistry.getPreferredAvailableTool();
+					if (initialTool) {
+						const agent = ctx.agentManager.createAgent(feature, initialTool.id);
+						terminalController.createTerminal(feature, agent, 0);
+					} else {
+						vscode.window.showErrorMessage(
+							"Feature created, but no coding tools are available to start the first agent.",
+						);
+					}
 					sidebarProvider.refresh();
 					const home = HomePanel.getInstance();
 					if (home) home.showFeature(feature.id);
@@ -321,10 +326,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
 				const agents = ctx.agentManager.getAgents(featureId);
 				if (agents.length === 0) {
-					const agent = ctx.agentManager.createAgent(
-						feature,
-						toolRegistry.getDefaultToolId(),
-					);
+					const initialTool = toolRegistry.getPreferredAvailableTool();
+					if (!initialTool) {
+						vscode.window.showErrorMessage(
+							"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
+						);
+						return;
+					}
+					const agent = ctx.agentManager.createAgent(feature, initialTool.id);
 					terminalController.createTerminal(feature, agent, 0);
 				} else {
 					terminalController.reconnectTmuxSessions(feature);
@@ -371,9 +380,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				if (!feature) return;
 
 				// Tool selection — only show installed tools
-				const tools = toolRegistry
-					.getTools()
-					.filter((t) => toolRegistry.isToolAvailable(t));
+				const tools = toolRegistry.getAvailableTools();
 				if (tools.length === 0) {
 					vscode.window.showErrorMessage(
 						"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",

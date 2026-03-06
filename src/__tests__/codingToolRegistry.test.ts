@@ -102,6 +102,34 @@ describe("CodingToolRegistry", () => {
 		});
 	});
 
+	describe("getAvailableTools", () => {
+		it("returns only tools found on PATH", () => {
+			mockCommandExists.mockImplementation((command) => command === "codex");
+			expect(registry.getAvailableTools().map((tool) => tool.id)).toEqual([
+				"codex",
+			]);
+		});
+	});
+
+	describe("getPreferredAvailableTool", () => {
+		it("prefers the configured default when it is available", () => {
+			mockConfig({ defaultTool: "copilot" });
+			mockCommandExists.mockImplementation((command) => command === "copilot");
+			expect(registry.getPreferredAvailableTool()?.id).toBe("copilot");
+		});
+
+		it("falls back to the first available tool when the default is missing", () => {
+			mockConfig({ defaultTool: "claude" });
+			mockCommandExists.mockImplementation((command) => command === "codex");
+			expect(registry.getPreferredAvailableTool()?.id).toBe("codex");
+		});
+
+		it("returns undefined when no tools are available", () => {
+			mockCommandExists.mockReturnValue(false);
+			expect(registry.getPreferredAvailableTool()).toBeUndefined();
+		});
+	});
+
 	describe("resolveAgentTool", () => {
 		it("returns claude for undefined toolId", () => {
 			const tool = registry.resolveAgentTool(undefined);
