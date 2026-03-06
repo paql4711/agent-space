@@ -1,14 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-	createTerminalMock,
-	showErrorMessageMock,
-	onDidCloseTerminalMock,
-} = vi.hoisted(() => ({
-	createTerminalMock: vi.fn(),
-	showErrorMessageMock: vi.fn(),
-	onDidCloseTerminalMock: vi.fn(() => ({ dispose: vi.fn() })),
-}));
+const { createTerminalMock, showErrorMessageMock, onDidCloseTerminalMock } =
+	vi.hoisted(() => ({
+		createTerminalMock: vi.fn(),
+		showErrorMessageMock: vi.fn(),
+		onDidCloseTerminalMock: vi.fn(() => ({ dispose: vi.fn() })),
+	}));
 
 vi.mock("../utils/platform", () => ({
 	exec: vi.fn(),
@@ -39,9 +36,9 @@ vi.mock("vscode", () => ({
 	},
 }));
 
-import { exec } from "../utils/platform";
 import { TerminalController } from "../agents/terminalController";
 import type { Agent, Feature } from "../types";
+import { exec } from "../utils/platform";
 
 describe("TerminalController", () => {
 	const feature: Feature = {

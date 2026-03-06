@@ -130,7 +130,10 @@ export class ServiceManager {
 		let changed = false;
 
 		for (const service of services) {
-			const preferredSession = this.tmux.serviceSessionName(featureId, service.id);
+			const preferredSession = this.tmux.serviceSessionName(
+				featureId,
+				service.id,
+			);
 			if (service.tmuxSession === preferredSession) {
 				continue;
 			}

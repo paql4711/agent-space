@@ -277,7 +277,10 @@ export class TerminalController implements vscode.Disposable {
 			if (this.terminals.has(agent.id)) continue;
 
 			const sessionName = this.tmux.sessionName(feature.id, agent.id);
-			const legacySessionName = this.tmux.legacySessionName(feature.id, agent.id);
+			const legacySessionName = this.tmux.legacySessionName(
+				feature.id,
+				agent.id,
+			);
 			const isAlive = this.tmux.adoptSession(sessionName, legacySessionName);
 
 			if (isAlive) {

@@ -69,7 +69,9 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(storageWatcher);
 
 	const toolRegistry = new CodingToolRegistry();
-	const defaultTool = toolRegistry.resolveAgentTool(toolRegistry.getDefaultToolId());
+	const defaultTool = toolRegistry.resolveAgentTool(
+		toolRegistry.getDefaultToolId(),
+	);
 	const availableTools = toolRegistry.getAvailableTools();
 	if (availableTools.length === 0) {
 		vscode.window.showWarningMessage(

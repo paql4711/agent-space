@@ -142,7 +142,11 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		if (!ctx) return;
 		const feature = ctx.featureManager.getFeature(featureId);
 		if (!feature) return;
-		ctx.serviceManager.restartService(serviceId, featureId, feature.worktreePath);
+		ctx.serviceManager.restartService(
+			serviceId,
+			featureId,
+			feature.worktreePath,
+		);
 		this.projectManager.notifyChange();
 	}
 

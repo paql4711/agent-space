@@ -32,9 +32,7 @@ describe("TmuxIntegration", () => {
 
 	describe("serviceSessionName", () => {
 		it("generates service session names with svc infix", () => {
-			expect(tmux.serviceSessionName("f1", "s1")).toBe(
-				"agent-space-svc-f1-s1",
-			);
+			expect(tmux.serviceSessionName("f1", "s1")).toBe("agent-space-svc-f1-s1");
 		});
 	});
 
@@ -239,20 +237,18 @@ describe("TmuxIntegration", () => {
 	describe("adoptSession", () => {
 		it("returns true when the preferred session already exists", () => {
 			mockExecSilent.mockReturnValue(true);
-			expect(
-				tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1"),
-			).toBe(true);
+			expect(tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1")).toBe(
+				true,
+			);
 			expect(mockExec).not.toHaveBeenCalled();
 		});
 
 		it("renames the current session when only the legacy session exists", () => {
-			mockExecSilent
-				.mockReturnValueOnce(false)
-				.mockReturnValueOnce(true);
+			mockExecSilent.mockReturnValueOnce(false).mockReturnValueOnce(true);
 			mockExec.mockReturnValue("");
-			expect(
-				tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1"),
-			).toBe(true);
+			expect(tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1")).toBe(
+				true,
+			);
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux rename-session -t "companion-f1-a1" "agent-space-f1-a1"',
 			);
@@ -260,9 +256,9 @@ describe("TmuxIntegration", () => {
 
 		it("returns false when neither session exists", () => {
 			mockExecSilent.mockReturnValue(false);
-			expect(
-				tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1"),
-			).toBe(false);
+			expect(tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1")).toBe(
+				false,
+			);
 			expect(mockExec).not.toHaveBeenCalled();
 		});
 	});
