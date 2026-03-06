@@ -2,8 +2,9 @@
 	"name": "agent-space",
 	"displayName": "Agent Space",
 	"publisher": "paql4711",
-	"description": "AI agent workspace for VS Code",
+	"description": "Run any coding CLI per feature with isolated Git worktrees and persistent sessions in VS Code",
 	"version": "0.1.0",
+	"icon": "media/marketplace/icon.png",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -12,6 +13,28 @@
 	"homepage": "https://github.com/paql4711/agent-space",
 	"bugs": {
 		"url": "https://github.com/paql4711/agent-space/issues"
+	},
+	"categories": [
+		"AI",
+		"Other"
+	],
+	"keywords": [
+		"ai",
+		"agents",
+		"multi-agent",
+		"coding",
+		"cli",
+		"git",
+		"worktree",
+		"tmux",
+		"claude",
+		"codex",
+		"copilot",
+		"opencode"
+	],
+	"galleryBanner": {
+		"color": "#0f172a",
+		"theme": "dark"
 	},
 	"engines": {
 		"vscode": "^1.90.0"

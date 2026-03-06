@@ -1,0 +1,25 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="32" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#132038"/>
+      <stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="71" y1="69" x2="189" y2="187" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#60A5FA"/>
+    </linearGradient>
+    <filter id="shadow" x="14" y="14" width="228" height="228" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="24" y="24" width="208" height="208" rx="52" fill="url(#bg)"/>
+    <rect x="24.75" y="24.75" width="206.5" height="206.5" rx="51.25" stroke="#1E293B" stroke-width="1.5"/>
+  </g>
+  <ellipse cx="128" cy="128" rx="82" ry="44" transform="rotate(-28 128 128)" stroke="url(#ring)" stroke-width="11" opacity="0.62"/>
+  <ellipse cx="128" cy="128" rx="82" ry="44" transform="rotate(28 128 128)" stroke="url(#ring)" stroke-width="11" opacity="0.62"/>
+  <circle cx="128" cy="128" r="27" fill="url(#ring)"/>
+  <circle cx="128" cy="53" r="15" fill="#E2E8F0"/>
+  <circle cx="64" cy="167" r="15" fill="#E2E8F0"/>
+  <circle cx="192" cy="167" r="15" fill="#E2E8F0"/>
+</svg>
