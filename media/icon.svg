@@ -1,0 +1,14 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Orbit 1: tilted ~30deg -->
+  <ellipse cx="12" cy="12" rx="9" ry="5" stroke="#C8C8C8" stroke-width="1" opacity="0.45" stroke-linecap="round" transform="rotate(-30 12 12)"/>
+  <!-- Orbit 2: tilted ~-30deg (opposite) -->
+  <ellipse cx="12" cy="12" rx="9" ry="5" stroke="#C8C8C8" stroke-width="1" opacity="0.45" stroke-linecap="round" transform="rotate(30 12 12)"/>
+  <!-- Agent node: top -->
+  <circle cx="12" cy="3.2" r="1.6" fill="#C8C8C8"/>
+  <!-- Agent node: bottom-left -->
+  <circle cx="4.5" cy="16.5" r="1.6" fill="#C8C8C8"/>
+  <!-- Agent node: bottom-right -->
+  <circle cx="19.5" cy="16.5" r="1.6" fill="#C8C8C8"/>
+  <!-- Central hub -->
+  <circle cx="12" cy="12" r="2.5" fill="#C8C8C8"/>
+</svg>

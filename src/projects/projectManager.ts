@@ -1,0 +1,186 @@
+import * as crypto from "node:crypto";
+import * as path from "node:path";
+import { AgentManager } from "../agents/agentManager";
+import { TmuxIntegration } from "../agents/tmux";
+import { FeatureManager } from "../features/featureManager";
+import { ServiceManager } from "../services/serviceManager";
+import type { GlobalStore } from "../storage/globalStore";
+import { Store } from "../storage/store";
+import type { Project } from "../types";
+
+export interface ProjectContext {
+	project: Project;
+	store: Store;
+	featureManager: FeatureManager;
+	agentManager: AgentManager;
+	serviceManager: ServiceManager;
+}
+
+export class ProjectManager {
+	private contexts = new Map<string, ProjectContext>();
+	private onChangeCallbacks: Array<() => void> = [];
+
+	constructor(
+		private readonly globalStore: GlobalStore,
+		private readonly storagePath: string,
+		private readonly worktreeRelativePath: string = ".worktrees",
+		private readonly tmux: TmuxIntegration = new TmuxIntegration(),
+	) {}
+
+	/** Register a callback fired when projects are added/removed. */
+	onChange(callback: () => void): void {
+		this.onChangeCallbacks.push(callback);
+	}
+
+	notifyChange(): void {
+		for (const cb of this.onChangeCallbacks) {
+			cb();
+		}
+	}
+
+	// ── CRUD ─────────────────────────────────────────────
+
+	getProjects(): Project[] {
+		return this.globalStore.getProjects();
+	}
+
+	addProject(repoPath: string, name?: string): Project {
+		const projects = this.getProjects();
+		if (projects.some((p) => p.repoPath === repoPath)) {
+			throw new Error(`Project at "${repoPath}" is already registered`);
+		}
+
+		const project: Project = {
+			id: crypto.randomUUID(),
+			name: name ?? path.basename(repoPath),
+			repoPath,
+		};
+
+		projects.push(project);
+		this.globalStore.saveProjects(projects);
+		this.notifyChange();
+		return project;
+	}
+
+	removeProject(projectId: string): void {
+		const projects = this.getProjects().filter((p) => p.id !== projectId);
+		this.globalStore.saveProjects(projects);
+		this.contexts.delete(projectId);
+		this.notifyChange();
+	}
+
+	// ── Cross-window sync ────────────────────────────────
+
+	handleExternalFileChange(uri: { fsPath: string }): void {
+		const rel = path.relative(this.storagePath, uri.fsPath);
+		const parts = rel.split(path.sep);
+
+		// projects.json → reload project list
+		if (parts.length === 1 && parts[0] === "projects.json") {
+			this.contexts.clear();
+			this.notifyChange();
+			return;
+		}
+
+		// preferences.json → just notify (HomePanel re-reads on refresh)
+		if (parts.length === 1 && parts[0] === "preferences.json") {
+			this.notifyChange();
+			return;
+		}
+
+		// projects/{id}/features.json → reload features
+		if (
+			parts.length === 3 &&
+			parts[0] === "projects" &&
+			parts[2] === "features.json"
+		) {
+			const projectId = parts[1];
+			const ctx = this.contexts.get(projectId);
+			if (ctx) ctx.featureManager.reload();
+			this.notifyChange();
+			return;
+		}
+
+		// projects/{id}/features/{fid}/agents.json → invalidate agent cache
+		if (
+			parts.length === 5 &&
+			parts[0] === "projects" &&
+			parts[2] === "features" &&
+			parts[4] === "agents.json"
+		) {
+			const projectId = parts[1];
+			const featureId = parts[3];
+			const ctx = this.contexts.get(projectId);
+			if (ctx) ctx.agentManager.invalidateFeature(featureId);
+			this.notifyChange();
+			return;
+		}
+
+		// projects/{id}/features/{fid}/services.json → invalidate service cache
+		if (
+			parts.length === 5 &&
+			parts[0] === "projects" &&
+			parts[2] === "features" &&
+			parts[4] === "services.json"
+		) {
+			const projectId = parts[1];
+			const featureId = parts[3];
+			const ctx = this.contexts.get(projectId);
+			if (ctx) ctx.serviceManager.invalidateFeature(featureId);
+			this.notifyChange();
+			return;
+		}
+	}
+
+	// ── Context lifecycle ────────────────────────────────
+
+	getContext(projectId: string): ProjectContext | undefined {
+		if (!this.contexts.has(projectId)) {
+			const project = this.getProjects().find((p) => p.id === projectId);
+			if (!project) return undefined;
+			this.contexts.set(projectId, this.initializeContext(project));
+		}
+		return this.contexts.get(projectId);
+	}
+
+	getAllContexts(): ProjectContext[] {
+		for (const project of this.getProjects()) {
+			if (!this.contexts.has(project.id)) {
+				this.contexts.set(project.id, this.initializeContext(project));
+			}
+		}
+		return [...this.contexts.values()];
+	}
+
+	findContextByFeatureId(featureId: string): ProjectContext | undefined {
+		for (const ctx of this.getAllContexts()) {
+			if (ctx.featureManager.getFeature(featureId)) {
+				return ctx;
+			}
+		}
+		return undefined;
+	}
+
+	// ── Internal ─────────────────────────────────────────
+
+	private initializeContext(project: Project): ProjectContext {
+		const storeDir = path.join(this.storagePath, "projects", project.id);
+		const store = new Store(storeDir);
+		const worktreeBase = path.resolve(
+			project.repoPath,
+			this.worktreeRelativePath,
+		);
+		const featureManager = new FeatureManager(
+			store,
+			project.repoPath,
+			worktreeBase,
+		);
+		const agentManager = new AgentManager(
+			store,
+			project.repoPath,
+			worktreeBase,
+		);
+		const serviceManager = new ServiceManager(store, this.tmux);
+		return { project, store, featureManager, agentManager, serviceManager };
+	}
+}

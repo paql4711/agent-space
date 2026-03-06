@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+/* VS Code Dark Theme Variables */
+:root {
+	--vscode-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--vscode-font-size: 13px;
+	--vscode-foreground: #cccccc;
+	--vscode-sideBar-background: #252526;
+	--vscode-editor-background: #1e1e1e;
+	--vscode-panel-border: #2b2b2b;
+	--vscode-sideBarSectionHeader-background: #37373d;
+	--vscode-sideBarSectionHeader-foreground: #cccccc;
+	--vscode-sideBarSectionHeader-border: #2b2b2b;
+	--vscode-descriptionForeground: #8b8b8b;
+	--vscode-button-background: #0078d4;
+	--vscode-button-foreground: #ffffff;
+	--vscode-button-hoverBackground: #1c8cf9;
+	--vscode-button-secondaryBackground: #3a3d41;
+	--vscode-button-secondaryForeground: #cccccc;
+	--vscode-button-secondaryHoverBackground: #45494e;
+	--vscode-list-hoverBackground: #2a2d2e;
+	--vscode-focusBorder: #007acc;
+	--vscode-badge-background: #4d4d4d;
+	--vscode-badge-foreground: #cccccc;
+	--vscode-icon-foreground: #c5c5c5;
+	--vscode-toolbar-hoverBackground: #5a5d5e50;
+	--vscode-menu-background: #252526;
+	--vscode-menu-foreground: #cccccc;
+	--vscode-menu-border: #454545;
+	--vscode-menu-selectionBackground: #094771;
+	--vscode-menu-selectionForeground: #ffffff;
+	--vscode-menu-separatorBackground: #454545;
+	--vscode-errorForeground: #f48771;
+	--vscode-testing-iconPassed: #6a9955;
+	--vscode-debugIcon-stopForeground: #f48771;
+	--vscode-disabledForeground: #6b6b6b;
+	--vscode-editor-font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+	--vscode-input-background: rgba(255, 255, 255, 0.08);
+}
+</style>
+<link rel="stylesheet" href="sidebar.css">
+</head>
+<body style="width: 300px;">
+	<button class="btn-secondary" onclick="">Add Project</button>
+
+	<!-- Project 1: With features -->
+	<div class="project-section">
+		<div class="project-header" onclick="">
+			<span class="project-toggle">
+				<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.976 10.072l4.357-4.357.62.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"/></svg>
+			</span>
+			<span class="project-name">my-awesome-app</span>
+			<span class="project-path" title="/Users/dev/projects/my-awesome-app">/Users/dev/projects/my-awesome-app</span>
+			<button class="project-remove-btn" title="Remove Project">
+				<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708L8 8.707z"/></svg>
+			</button>
+		</div>
+		<div class="project-body" id="project-body-1">
+			<button class="btn-primary" onclick="">
+				<span>+</span> New Feature
+			</button>
+
+			<!-- Feature Card 1: Active with agents -->
+			<div class="feature-card" onclick="">
+				<div class="card-header">
+					<span class="feature-name">auth-system</span>
+					<span class="status-badge status-active">Active</span>
+				</div>
+				<div class="card-details">
+					<span class="branch-name">feature/auth-system</span>
+					<span class="isolation-tag">SHARED</span>
+				</div>
+				<div class="section-header">
+					<span class="section-label">Agents</span>
+					<span class="agent-count">2</span>
+				</div>
+				<div class="agent-list">
+					<div class="agent-card running" oncontextmenu="">
+						<div class="agent-color-bar" style="background-color: #569cd6"></div>
+						<div class="status-dot running"></div>
+						<span class="agent-name" title="Backend API">Backend API<span class="agent-tool"> &middot; Claude Code</span></span>
+					</div>
+					<div class="agent-card idle" oncontextmenu="">
+						<div class="agent-color-bar" style="background-color: #4ec9b0"></div>
+						<div class="status-dot idle"></div>
+						<span class="agent-name" title="Frontend UI">Frontend UI</span>
+					</div>
+				</div>
+				<!-- Done agents -->
+				<div class="disabled-header collapsed" onclick="">
+					<span class="disabled-icon">
+						<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>
+					</span>
+					<span>1 finished</span>
+				</div>
+				<div class="disabled-list collapsed" id="disabled-list-auth">
+					<div class="agent-card done" oncontextmenu="">
+						<div class="agent-color-bar" style="background-color: #6a9955"></div>
+						<div class="status-dot done"></div>
+						<span class="agent-name">DB Schema</span>
+						<button class="action-btn" title="Re-enable agent">↻</button>
+					</div>
+				</div>
+				<!-- Scripts -->
+				<div class="services-section">
+					<div class="section-header"><span class="section-label">Scripts</span></div>
+					<div class="service-list">
+						<div class="service-card running">
+							<div class="service-header">
+								<span class="service-name" title="npm run dev">Dev Server</span>
+								<div class="service-actions">
+									<button class="action-btn" title="Stop">■</button>
+								</div>
+							</div>
+							<div class="service-command">npm run dev</div>
+						</div>
+						<div class="service-card errored">
+							<div class="service-header">
+								<span class="service-name" title="npm run test:watch">Test Watcher</span>
+								<div class="service-actions">
+									<button class="action-btn" title="Start">↻</button>
+								</div>
+							</div>
+							<div class="service-command">npm run test:watch</div>
+						</div>
+					</div>
+				</div>
+				<!-- Action Bar -->
+				<div class="action-bar">
+					<button class="action-btn" title="Add Agent">
+						<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z"/></svg>
+					</button>
+					<button class="action-btn" title="Execute Script">🔔</button>
+					<button class="action-btn" title="Sync Names">⟳</button>
+					<div class="action-spacer"></div>
+					<button class="action-btn" title="Open Workspace">
+						<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm1 5v6h10V7H3zm0-4v3h10V3H3z"/></svg>
+					</button>
+					<button class="action-btn" title="Create PR">PR</button>
+					<div class="dropdown-container" style="position: relative; display: inline-block;">
+						<button class="action-btn" title="More Actions">⋯</button>
+						<div class="context-menu" style="right: 0; left: auto; top: 100%;">
+							<button class="context-menu-item menu-danger">🗑 Delete Feature</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Feature Card 2: Done -->
+			<div class="feature-card" onclick="">
+				<div class="card-header">
+					<span class="feature-name">user-settings</span>
+					<span class="status-badge status-done">Done</span>
+				</div>
+				<div class="card-details">
+					<span class="branch-name">feature/user-settings</span>
+				</div>
+				<div class="section-header">
+					<span class="section-label">Agents</span>
+				</div>
+				<div class="agent-list">
+					<div class="empty-placeholder">Click + to add an agent</div>
+				</div>
+				<div class="action-bar">
+					<button class="action-btn" title="Add Agent">+</button>
+					<button class="action-btn" title="Execute Script">🔔</button>
+					<button class="action-btn" title="Sync Names">⟳</button>
+					<div class="action-spacer"></div>
+					<button class="action-btn" title="Open Workspace">⊞</button>
+					<button class="action-btn" title="Create PR">PR</button>
+					<div class="dropdown-container" style="position: relative; display: inline-block;">
+						<button class="action-btn" title="More Actions">⋯</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Empty state context menu (hidden) -->
+	<div id="agentContextMenu" class="context-menu">
+		<button class="context-menu-item" id="menuRename">Rename Agent</button>
+		<div class="context-separator"></div>
+		<button class="context-menu-item" id="menuMarkDone">Mark as Done</button>
+	</div>
+</body>
+</html>

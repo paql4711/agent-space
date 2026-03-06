@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+/* VS Code Dark Theme Variables */
+:root {
+	--vscode-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	--vscode-font-size: 13px;
+	--vscode-foreground: #cccccc;
+	--vscode-sideBar-background: #252526;
+	--vscode-editor-background: #1e1e1e;
+	--vscode-panel-border: #2b2b2b;
+	--vscode-descriptionForeground: #8b8b8b;
+	--vscode-button-background: #0078d4;
+	--vscode-button-foreground: #ffffff;
+	--vscode-button-hoverBackground: #1c8cf9;
+	--vscode-button-secondaryBackground: #3a3d41;
+	--vscode-button-secondaryForeground: #cccccc;
+	--vscode-button-secondaryHoverBackground: #45494e;
+	--vscode-list-hoverBackground: #2a2d2e;
+	--vscode-focusBorder: #007acc;
+	--vscode-badge-background: #4d4d4d;
+	--vscode-badge-foreground: #cccccc;
+	--vscode-icon-foreground: #c5c5c5;
+	--vscode-toolbar-hoverBackground: #5a5d5e50;
+	--vscode-errorForeground: #f48771;
+	--vscode-testing-iconPassed: #6a9955;
+	--vscode-disabledForeground: #6b6b6b;
+	--vscode-editor-font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+	--vscode-input-background: rgba(255, 255, 255, 0.08);
+	--vscode-sideBarSectionHeader-background: #37373d;
+}
+</style>
+<link rel="stylesheet" href="home.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════
+     WELCOME DASHBOARD VIEW
+     ═══════════════════════════════════════════════════════ -->
+<div class="welcome-container">
+	<div class="welcome-header">
+		<div class="welcome-title">Agent Space</div>
+		<div class="welcome-subtitle">Your features at a glance</div>
+	</div>
+
+	<div class="quick-actions-row">
+		<button class="action-btn" onclick="">
+			<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z"/></svg>
+			New Feature
+		</button>
+		<button class="action-btn secondary" onclick="">
+			<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3H7.71l-.85-.85L6.51 2h-5l-.5.5v11l.5.5h13l.5-.5v-10L14.5 3zm-.51 8.49V13h-12V7h12v4.49zm0-5.49h-12V3h4.29l.85.85.36.15H14v2z"/></svg>
+			Add Project
+		</button>
+	</div>
+
+	<div class="section-label">Active Features</div>
+	<div class="feature-grid">
+		<!-- Feature Card 1: Active -->
+		<div class="feature-resume-card" onclick="">
+			<div class="feature-card-top">
+				<div class="feature-card-color" style="background: #569cd6"></div>
+				<div class="feature-card-name">feature/auth-system</div>
+				<span class="feature-card-status active">Active</span>
+			</div>
+			<div class="feature-card-meta">
+				<span class="feature-card-project">my-awesome-app</span>
+				<span class="feature-card-counts">2 agents &middot; 1 script</span>
+			</div>
+			<button class="feature-card-resume" onclick="">Resume &rarr;</button>
+		</div>
+
+		<!-- Feature Card 2: Active -->
+		<div class="feature-resume-card" onclick="">
+			<div class="feature-card-top">
+				<div class="feature-card-color" style="background: #4ec9b0"></div>
+				<div class="feature-card-name">feature/dashboard-redesign</div>
+				<span class="feature-card-status active">Active</span>
+			</div>
+			<div class="feature-card-meta">
+				<span class="feature-card-project">my-awesome-app</span>
+				<span class="feature-card-counts">1 agent &middot; 0 scripts</span>
+			</div>
+			<button class="feature-card-resume" onclick="">Resume &rarr;</button>
+		</div>
+
+		<!-- Feature Card 3: Done -->
+		<div class="feature-resume-card" onclick="">
+			<div class="feature-card-top">
+				<div class="feature-card-color" style="background: #6a9955"></div>
+				<div class="feature-card-name">feature/user-settings</div>
+				<span class="feature-card-status done">Done</span>
+			</div>
+			<div class="feature-card-meta">
+				<span class="feature-card-project">my-awesome-app</span>
+				<span class="feature-card-counts">1 agent &middot; 0 scripts</span>
+			</div>
+			<button class="feature-card-resume" onclick="">Resume &rarr;</button>
+		</div>
+	</div>
+
+	<div class="section-label">Projects</div>
+	<table class="projects-table">
+		<thead>
+			<tr>
+				<th>Name</th>
+				<th>Path</th>
+				<th>Features</th>
+			</tr>
+		</thead>
+		<tbody>
+			<tr>
+				<td>my-awesome-app</td>
+				<td class="project-path-cell" title="/Users/dev/projects/my-awesome-app">/Users/dev/projects/my-awesome-app</td>
+				<td>3</td>
+			</tr>
+		</tbody>
+	</table>
+</div>
+
+<!-- Separator for test page -->
+<hr style="border-color: #444; margin: 40px 0;">
+
+<!-- ═══════════════════════════════════════════════════════
+     FEATURE HOME VIEW
+     ═══════════════════════════════════════════════════════ -->
+<!-- Confirmation Banner Demo -->
+<div class="confirmation-banner danger">
+	<div class="confirmation-content">
+		<strong>Delete auth-system?</strong>
+		<span>This removes the worktree and all agent data. This cannot be undone.</span>
+	</div>
+	<div class="confirmation-actions">
+		<button class="confirm-btn danger">Delete</button>
+		<button class="confirm-btn cancel">Cancel</button>
+	</div>
+</div>
+
+<div class="workspace-header">
+	<button class="home-back-btn" onclick="" title="Back to Agent Space">&larr;</button>
+	<div class="header-color-dot" style="background: #569cd6"></div>
+	<div class="header-info">
+		<div class="header-title">auth-system</div>
+		<div class="header-branch">feature/auth-system</div>
+	</div>
+	<span class="header-status active">Active</span>
+	<div class="header-actions">
+		<button class="header-action-btn" title="Refresh">
+			<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.451 5.609l-.579-.921-1.017.641c-.597-.58-1.345-.99-2.162-1.18a5.03 5.03 0 0 0-2.441.077 4.975 4.975 0 0 0-2.108 1.299A5.007 5.007 0 0 0 3.986 8.1a4.947 4.947 0 0 0 .424 2.32 5.028 5.028 0 0 0 1.541 1.86 5.067 5.067 0 0 0 2.21.996 4.997 4.997 0 0 0 2.44-.079c.729-.224 1.393-.612 1.938-1.137l-.726-.726a3.98 3.98 0 0 1-1.535.892 3.98 3.98 0 0 1-1.935.062 4.037 4.037 0 0 1-1.758-.793A3.996 3.996 0 0 1 5.36 9.974a3.935 3.935 0 0 1-.337-1.842A3.985 3.985 0 0 1 5.723 6.3a3.955 3.955 0 0 1 1.674-1.032 3.998 3.998 0 0 1 1.94-.061c.65.133 1.248.436 1.723.875l-1.06.667.596.921L13.452 5.61z"/></svg>
+		</button>
+		<button class="header-action-btn" title="Open Folder">
+			<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3H7.71l-.85-.85L6.51 2h-5l-.5.5v11l.5.5h13l.5-.5v-10L14.5 3zm-.51 8.49V13h-12V7h12v4.49zm0-5.49h-12V3h4.29l.85.85.36.15H14v2z"/></svg>
+		</button>
+	</div>
+</div>
+<div class="workspace-content">
+	<!-- Progress -->
+	<div class="progress-section">
+		<div class="progress-label">
+			<span>Agent Progress</span>
+			<span>1 / 3 done</span>
+		</div>
+		<div class="progress-track">
+			<div class="progress-fill" style="width: 33%"></div>
+		</div>
+	</div>
+
+	<!-- Agents -->
+	<div>
+		<div class="section-label">Agents &middot; 3</div>
+		<div class="agent-grid">
+			<div class="agent-panel" style="border-left: 3px solid #569cd6">
+				<div class="agent-panel-header expanded">
+					<div class="agent-status-dot running"></div>
+					<span class="agent-panel-name">Backend API</span>
+					<span class="agent-tool-badge">Claude Code</span>
+					<div class="agent-panel-actions">
+						<button class="agent-action-btn" title="Focus Terminal">&#9243;</button>
+						<button class="agent-action-btn" title="Mark Done">&#10003;</button>
+					</div>
+					<span class="agent-panel-chevron expanded">&rsaquo;</span>
+				</div>
+				<div class="agent-activity expanded">
+					<div class="activity-content">
+						<pre class="activity-pre" style="display:block">$ claude --continue
+&#x23FA; Reading src/auth/middleware.ts...
+&#x23FA; I'll add the JWT validation middleware.
+  Writing src/auth/jwtValidator.ts...
+  Added token refresh logic and expiry check.</pre>
+					</div>
+				</div>
+			</div>
+
+			<div class="agent-panel" style="border-left: 3px solid #4ec9b0">
+				<div class="agent-panel-header">
+					<div class="agent-status-dot idle"></div>
+					<span class="agent-panel-name">Frontend UI</span>
+					<div class="agent-panel-actions">
+						<button class="agent-action-btn" title="Focus Terminal">&#9243;</button>
+						<button class="agent-action-btn" title="Mark Done">&#10003;</button>
+					</div>
+					<span class="agent-panel-chevron">&rsaquo;</span>
+				</div>
+				<div class="agent-activity">
+					<div class="activity-content">
+						<div class="activity-empty">Click to view live terminal output</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="agent-panel" style="border-left: 3px solid #6a9955">
+				<div class="agent-panel-header">
+					<div class="agent-status-dot done"></div>
+					<span class="agent-panel-name done">DB Schema</span>
+					<div class="agent-panel-actions">
+						<button class="agent-action-btn" title="Reopen">&#8635;</button>
+					</div>
+					<span class="agent-panel-chevron">&rsaquo;</span>
+				</div>
+				<div class="agent-activity">
+					<div class="activity-content">
+						<div class="activity-empty">Agent finished</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Ghost card -->
+			<div class="ghost-card" onclick="">
+				<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z"/></svg>
+				Add Agent
+			</div>
+		</div>
+	</div>
+
+	<!-- Scripts -->
+	<div>
+		<div class="section-label">Scripts &middot; 1</div>
+		<div class="services-grid">
+			<div class="service-panel">
+				<div class="service-status-dot running"></div>
+				<div class="service-info">
+					<div class="service-name">Dev Server</div>
+					<div class="service-command">npm run dev</div>
+				</div>
+				<div class="service-actions">
+					<button class="agent-action-btn" title="Stop">&#9632;</button>
+					<button class="agent-action-btn" title="Restart">&#8635;</button>
+				</div>
+			</div>
+			<!-- Ghost card -->
+			<div class="ghost-card" onclick="">
+				<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z"/></svg>
+				Execute Script
+			</div>
+		</div>
+	</div>
+
+	<!-- Git Stats -->
+	<div>
+		<div class="section-label">Git Changes</div>
+		<div class="git-stats">
+			<div class="git-stat-row">
+				<span class="git-stat-label">Files changed</span>
+				<span class="git-stat-value">5</span>
+			</div>
+			<div class="git-stat-row">
+				<span class="git-stat-label">Insertions</span>
+				<span class="git-stat-value git-additions">+120</span>
+			</div>
+			<div class="git-stat-row">
+				<span class="git-stat-label">Deletions</span>
+				<span class="git-stat-value git-deletions">-30</span>
+			</div>
+		</div>
+	</div>
+
+	<!-- Quick Actions -->
+	<div>
+		<div class="section-label">Quick Actions</div>
+		<div class="quick-actions">
+			<button class="quick-action-btn primary" onclick="">
+				<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z"/></svg>
+				Add Agent
+			</button>
+			<button class="quick-action-btn" onclick="">Execute Script</button>
+			<button class="quick-action-btn" onclick="">Create PR</button>
+			<button class="quick-action-btn" onclick="">Sync Names</button>
+		</div>
+	</div>
+
+	<!-- Feature Actions -->
+	<div class="feature-actions-section">
+		<button class="quick-action-btn" onclick="">Open Folder</button>
+		<button class="quick-action-btn danger" onclick="">Delete Feature</button>
+	</div>
+</div>
+
+<!-- Separator -->
+<hr style="border-color: #444; margin: 40px 0;">
+
+<!-- ═══════════════════════════════════════════════════════
+     EMPTY WELCOME STATE
+     ═══════════════════════════════════════════════════════ -->
+<div class="welcome-container">
+	<div class="welcome-header">
+		<div class="welcome-title">Agent Space</div>
+		<div class="welcome-subtitle">Your features at a glance</div>
+	</div>
+	<div class="empty-welcome">
+		<div class="empty-welcome-title">No projects yet</div>
+		<div class="empty-welcome-text">Add a Git project to get started with Agent Space.</div>
+		<button class="action-btn secondary" onclick="" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; font-size: 12px; cursor: pointer;">
+			Add Project
+		</button>
+	</div>
+</div>
+
+</body>
+</html>

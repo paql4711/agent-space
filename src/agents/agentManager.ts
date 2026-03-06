@@ -1,0 +1,232 @@
+import { execSync } from "node:child_process";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { Store } from "../storage/store";
+import type { Agent, AgentStatus, Feature } from "../types";
+import { isWorktreePathSafe } from "../utils/worktreeGuard";
+
+export class AgentManager {
+	private agentsByFeature = new Map<string, Agent[]>();
+
+	constructor(
+		private readonly store: Store,
+		private readonly repoRoot: string,
+		private readonly worktreeBase: string,
+	) {}
+
+	invalidateFeature(featureId: string): void {
+		this.agentsByFeature.delete(featureId);
+	}
+
+	getAgents(featureId: string): Agent[] {
+		return [...this.loadAgents(featureId)];
+	}
+
+	createAgent(feature: Feature, toolId?: string): Agent {
+		const agents = this.loadAgents(feature.id);
+		const name = this.nextDefaultName(agents);
+		const id = crypto.randomUUID();
+
+		let worktreePath: string | undefined;
+		if (feature.isolation === "per-agent") {
+			const shortId = id.slice(0, 8);
+			worktreePath = path.join(
+				this.worktreeBase,
+				`${feature.name}--${shortId}`,
+			);
+			const branch = `feat/${feature.name}/agent-${shortId}`;
+			execSync(
+				`git worktree add "${worktreePath}" -b "${branch}" "${feature.branch}"`,
+				{
+					cwd: this.repoRoot,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "pipe"],
+				},
+			);
+		}
+
+		// Claude gets a pre-assigned session ID; Codex auto-generates its own
+		// (discovered post-launch by CodexSessionWatcher); others get none
+		const sessionId =
+			!toolId || toolId === "claude" ? crypto.randomUUID() : null;
+
+		const agent: Agent = {
+			id,
+			featureId: feature.id,
+			name,
+			sessionId,
+			worktreePath,
+			toolId,
+			status: "stopped",
+			createdAt: new Date().toISOString(),
+		};
+
+		agents.push(agent);
+		this.saveAgents(feature.id, agents);
+		return agent;
+	}
+
+	renameAgent(agentId: string, featureId: string, name: string): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent) return;
+		agent.name = name;
+		this.saveAgents(featureId, agents);
+	}
+
+	updateAgentStatus(
+		agentId: string,
+		featureId: string,
+		status: AgentStatus,
+	): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent) return;
+		agent.status = status;
+		this.saveAgents(featureId, agents);
+	}
+
+	updateAgentSessionId(
+		agentId: string,
+		featureId: string,
+		sessionId: string,
+	): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent) return;
+		agent.sessionId = sessionId;
+		this.saveAgents(featureId, agents);
+	}
+
+	closeAgent(agentId: string, featureId: string): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent) return;
+		agent.status = "done";
+		this.saveAgents(featureId, agents);
+	}
+
+	reopenAgent(agentId: string, feature: Feature): Agent | undefined {
+		const agents = this.loadAgents(feature.id);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent || agent.status !== "done") return undefined;
+
+		// Recreate per-agent worktree if it was removed
+		if (feature.isolation === "per-agent" && agent.worktreePath) {
+			if (!this.worktreeExists(agent.worktreePath)) {
+				const shortId = agent.id.slice(0, 8);
+				const branch = `feat/${feature.name}/agent-${shortId}`;
+				try {
+					// Try to reuse existing branch, otherwise create new
+					try {
+						execSync(`git worktree add "${agent.worktreePath}" "${branch}"`, {
+							cwd: this.repoRoot,
+							encoding: "utf-8",
+							stdio: ["ignore", "pipe", "pipe"],
+						});
+					} catch {
+						execSync(
+							`git worktree add "${agent.worktreePath}" -b "${branch}" "${feature.branch}"`,
+							{
+								cwd: this.repoRoot,
+								encoding: "utf-8",
+								stdio: ["ignore", "pipe", "pipe"],
+							},
+						);
+					}
+				} catch (err) {
+					console.error(`[AgentManager] Failed to recreate worktree: ${err}`);
+					return undefined;
+				}
+			}
+		}
+
+		agent.status = "stopped";
+		this.saveAgents(feature.id, agents);
+		return agent;
+	}
+
+	isAgentBranchMerged(agent: Agent, feature: Feature): boolean {
+		if (!agent.worktreePath) return true;
+		const shortId = agent.id.slice(0, 8);
+		const agentBranch = `feat/${feature.name}/agent-${shortId}`;
+		try {
+			execSync(
+				`git merge-base --is-ancestor "${agentBranch}" "${feature.branch}"`,
+				{
+					cwd: this.repoRoot,
+					stdio: "ignore",
+				},
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	deleteAgent(agentId: string, featureId: string): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (agent?.worktreePath) {
+			this.removeWorktree(agent.worktreePath);
+		}
+		this.saveAgents(
+			featureId,
+			agents.filter((a) => a.id !== agentId),
+		);
+	}
+
+	deleteAllAgents(featureId: string): void {
+		for (const agent of this.loadAgents(featureId)) {
+			if (agent.worktreePath) {
+				this.removeWorktree(agent.worktreePath);
+			}
+		}
+		this.saveAgents(featureId, []);
+		this.store.deleteFeatureData(featureId);
+	}
+
+	private loadAgents(featureId: string): Agent[] {
+		if (!this.agentsByFeature.has(featureId)) {
+			this.agentsByFeature.set(featureId, this.store.loadAgents(featureId));
+		}
+		// biome-ignore lint/style/noNonNullAssertion: guaranteed by has() check above
+		return this.agentsByFeature.get(featureId)!;
+	}
+
+	private saveAgents(featureId: string, agents: Agent[]): void {
+		this.agentsByFeature.set(featureId, agents);
+		this.store.saveAgents(featureId, agents);
+	}
+
+	private removeWorktree(worktreePath: string): void {
+		if (!isWorktreePathSafe(worktreePath, this.worktreeBase)) {
+			console.error(
+				`[AgentManager] Refusing to remove worktree outside base: "${worktreePath}"`,
+			);
+			return;
+		}
+		try {
+			execSync(`git worktree remove "${worktreePath}" --force`, {
+				cwd: this.repoRoot,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		} catch (err) {
+			console.error(`[AgentManager] Failed to remove worktree: ${err}`);
+		}
+	}
+
+	private worktreeExists(worktreePath: string): boolean {
+		try {
+			return fs.existsSync(path.join(worktreePath, ".git"));
+		} catch {
+			return false;
+		}
+	}
+
+	private nextDefaultName(agents: Agent[]): string {
+		return `Agent ${agents.length + 1}`;
+	}
+}

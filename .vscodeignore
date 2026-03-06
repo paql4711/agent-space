@@ -1,0 +1,15 @@
+.git/**
+.gitignore
+.env
+.vscode/**
+src/**
+scripts/**
+sidebar-preview.png
+biome.json
+bun.lock
+esbuild.js
+tsconfig.json
+vitest.config.ts
+media/webview/_test_*.html
+dist/**/*.map
+*.vsix

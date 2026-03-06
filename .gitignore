@@ -1,0 +1,4 @@
+dist/
+agent-space*
+node_modules
+.env

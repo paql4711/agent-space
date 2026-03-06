@@ -1,0 +1,256 @@
+{
+	"name": "agent-space",
+	"displayName": "Agent Space",
+	"publisher": "paql4711",
+	"description": "AI agent workspace for VS Code",
+	"version": "0.1.0",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/paql4711/agent-space.git"
+	},
+	"homepage": "https://github.com/paql4711/agent-space",
+	"bugs": {
+		"url": "https://github.com/paql4711/agent-space/issues"
+	},
+	"engines": {
+		"vscode": "^1.90.0"
+	},
+	"main": "./dist/extension.js",
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "agentSpace",
+					"title": "Agent Space",
+					"icon": "media/icon.svg"
+				}
+			]
+		},
+		"views": {
+			"agentSpace": [
+				{
+					"id": "agentSpace.features",
+					"name": "Features",
+					"type": "webview"
+				}
+			]
+		},
+		"commands": [
+			{
+				"command": "agentSpace.newFeature",
+				"title": "New Feature",
+				"category": "Agent Space",
+				"icon": "$(add)"
+			},
+			{
+				"command": "agentSpace.selectFeature",
+				"title": "Select Feature",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.deleteFeature",
+				"title": "Delete Feature",
+				"category": "Agent Space",
+				"icon": "$(trash)"
+			},
+			{
+				"command": "agentSpace.createPR",
+				"title": "Create Pull Request",
+				"category": "Agent Space",
+				"icon": "$(git-pull-request)"
+			},
+			{
+				"command": "agentSpace.addAgent",
+				"title": "Add Agent",
+				"category": "Agent Space",
+				"icon": "$(add)"
+			},
+			{
+				"command": "agentSpace.addService",
+				"title": "Execute Script",
+				"category": "Agent Space",
+				"icon": "$(server-process)"
+			},
+			{
+				"command": "agentSpace.openFeatureFolder",
+				"title": "Open in File Explorer",
+				"category": "Agent Space",
+				"icon": "$(folder-opened)"
+			},
+			{
+				"command": "agentSpace.addProject",
+				"title": "Add Project",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.removeProject",
+				"title": "Remove Project",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.syncSessionNames",
+				"title": "Sync Session Names",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.reopenAgent",
+				"title": "Reopen Agent",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.openWorkspace",
+				"title": "Open Workspace",
+				"category": "Agent Space",
+				"icon": "$(window)"
+			},
+			{
+				"command": "agentSpace.openHome",
+				"title": "Open Home",
+				"category": "Agent Space",
+				"icon": "$(home)"
+			}
+		],
+		"menus": {
+			"view/item/context": [
+				{
+					"command": "agentSpace.addAgent",
+					"when": "viewItem == featureActive",
+					"group": "1_actions@1"
+				},
+				{
+					"command": "agentSpace.createPR",
+					"when": "viewItem == featureActive || viewItem == featureDone",
+					"group": "1_actions@2"
+				},
+				{
+					"command": "agentSpace.openFeatureFolder",
+					"when": "viewItem == featureActive || viewItem == featureDone",
+					"group": "1_actions@3"
+				},
+				{
+					"command": "agentSpace.deleteFeature",
+					"when": "viewItem == featureActive || viewItem == featureDone",
+					"group": "2_danger@1"
+				},
+				{
+					"command": "agentSpace.addAgent",
+					"when": "viewItem == featureActive",
+					"group": "inline"
+				},
+				{
+					"command": "agentSpace.createPR",
+					"when": "viewItem == featureActive",
+					"group": "inline"
+				}
+			]
+		},
+		"configuration": {
+			"title": "Agent Space",
+			"properties": {
+				"agentSpace.enablePerAgentIsolation": {
+					"type": "boolean",
+					"default": false,
+					"description": "Enable per-agent worktree isolation. When disabled, every feature uses a single shared worktree."
+				},
+				"agentSpace.syncSessionNames": {
+					"type": "boolean",
+					"default": true,
+					"description": "Sync agent names from supported CLI rename metadata"
+				},
+				"agentSpace.autoNameAgents": {
+					"type": "boolean",
+					"default": true,
+					"description": "Deprecated: use agentSpace.syncSessionNames instead. Falls back to this if syncSessionNames is not set."
+				},
+				"agentSpace.codingTools": {
+					"type": "array",
+					"default": [],
+					"items": {
+						"type": "object",
+						"required": [
+							"id",
+							"name",
+							"command"
+						],
+						"properties": {
+							"id": {
+								"type": "string",
+								"description": "Unique identifier"
+							},
+							"name": {
+								"type": "string",
+								"description": "Display name"
+							},
+							"command": {
+								"type": "string",
+								"description": "CLI command to execute"
+							},
+							"args": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "CLI arguments"
+							}
+						}
+					},
+					"description": "Custom coding CLI tools. Built-in tools (claude, codex, copilot, opencode) are always available."
+				},
+				"agentSpace.defaultTool": {
+					"type": "string",
+					"default": "claude",
+					"enum": [
+						"claude",
+						"codex",
+						"copilot",
+						"opencode"
+					],
+					"enumItemLabels": [
+						"Claude Code",
+						"Codex CLI",
+						"GitHub Copilot",
+						"OpenCode"
+					],
+					"markdownEnumDescriptions": [
+						"Use Claude Code for new agents.",
+						"Use Codex CLI for new agents.",
+						"Use GitHub Copilot for new agents.",
+						"Use OpenCode for new agents."
+					],
+					"description": "Default built-in coding tool for new agents."
+				},
+				"agentSpace.worktreeBasePath": {
+					"type": "string",
+					"default": ".worktrees",
+					"description": "Base directory for git worktrees, relative to the project root."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"esbuild": "node esbuild.js",
+		"esbuild:watch": "node esbuild.js --watch",
+		"compile": "tsc -noEmit && node esbuild.js",
+		"watch": "node esbuild.js --watch",
+		"check:fix": "biome check --error-on-warnings --write",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc --noEmit",
+		"package": "bunx @vscode/vsce package",
+		"release:patch": "bash scripts/release.sh patch",
+		"release:minor": "bash scripts/release.sh minor",
+		"release:major": "bash scripts/release.sh major"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.6",
+		"@types/node": "^20.11.0",
+		"@types/vscode": "^1.90.0",
+		"esbuild": "^0.20.0",
+		"typescript": "^5.3.0",
+		"vitest": "^4.0.18"
+	}
+}

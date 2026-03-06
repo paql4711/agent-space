@@ -1,0 +1,354 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { CodexSessionProvider } from "../agents/sessionProviders/codexSessionProvider";
+
+describe("CodexSessionProvider", () => {
+	let tmpDir: string;
+	let sessionIndexPath: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-test-"));
+		sessionIndexPath = path.join(tmpDir, "session_index.jsonl");
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function writeSessionFile(relativePath: string, lines: string[]): string {
+		const filePath = path.join(tmpDir, relativePath);
+		fs.mkdirSync(path.dirname(filePath), { recursive: true });
+		fs.writeFileSync(filePath, lines.join("\n"));
+		return filePath;
+	}
+
+	function sessionMeta(
+		id: string,
+		opts: {
+			title?: string;
+			first_user_message?: string;
+			cwd?: string;
+			created?: string;
+		} = {},
+	) {
+		return JSON.stringify({
+			type: "session_meta",
+			payload: {
+				id,
+				title: opts.title,
+				first_user_message: opts.first_user_message,
+				cwd: opts.cwd || "/tmp/project",
+				created: opts.created || "2026-03-04T10:00:00.000Z",
+			},
+		});
+	}
+
+	function writeSessionIndex(lines: string[]): string {
+		fs.writeFileSync(sessionIndexPath, `${lines.join("\n")}\n`);
+		return sessionIndexPath;
+	}
+
+	describe("scanSessions", () => {
+		it("parses session_meta from JSONL files in nested dirs", () => {
+			writeSessionFile("2026/03/04/rollout-1709550000-sess-abc.jsonl", [
+				sessionMeta("sess-abc", { title: "Fix the bug" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const sessions = provider.scanSessions();
+
+			expect(sessions).toHaveLength(1);
+			expect(sessions[0].sessionId).toBe("sess-abc");
+			expect(sessions[0].prompt).toBe("Fix the bug");
+			expect(sessions[0].projectPath).toBe("/tmp/project");
+		});
+
+		it("handles multiple session files across date dirs", () => {
+			writeSessionFile("2026/03/04/rollout-1000-sess-a.jsonl", [
+				sessionMeta("sess-a", { title: "Task A" }),
+			]);
+			writeSessionFile("2026/03/05/rollout-2000-sess-b.jsonl", [
+				sessionMeta("sess-b", { title: "Task B" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const sessions = provider.scanSessions();
+
+			expect(sessions).toHaveLength(2);
+			const ids = sessions.map((s) => s.sessionId).sort();
+			expect(ids).toEqual(["sess-a", "sess-b"]);
+		});
+
+		it("skips non-jsonl files", () => {
+			fs.mkdirSync(path.join(tmpDir, "2026/03/04"), { recursive: true });
+			fs.writeFileSync(
+				path.join(tmpDir, "2026/03/04/readme.txt"),
+				"not a session",
+			);
+			writeSessionFile("2026/03/04/rollout-1000-sess-valid.jsonl", [
+				sessionMeta("sess-valid", { title: "Valid" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const sessions = provider.scanSessions();
+
+			expect(sessions).toHaveLength(1);
+			expect(sessions[0].sessionId).toBe("sess-valid");
+		});
+
+		it("returns empty array when directory does not exist", () => {
+			const provider = new CodexSessionProvider("/nonexistent/path");
+			expect(provider.scanSessions()).toEqual([]);
+		});
+
+		it("skips files without session_meta event", () => {
+			writeSessionFile("2026/03/04/rollout-1000-no-meta.jsonl", [
+				JSON.stringify({ type: "user_message", content: "Hello" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const sessions = provider.scanSessions();
+
+			expect(sessions).toHaveLength(0);
+		});
+
+		it("skips files where session_meta has no id", () => {
+			writeSessionFile("2026/03/04/rollout-1000-no-id.jsonl", [
+				JSON.stringify({ type: "session_meta", payload: { cwd: "/tmp" } }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const sessions = provider.scanSessions();
+
+			expect(sessions).toHaveLength(0);
+		});
+
+		it("uses first_user_message as fallback when title is missing", () => {
+			writeSessionFile("2026/03/04/rollout-1000-sess-msg.jsonl", [
+				sessionMeta("sess-msg", { first_user_message: "Help me refactor" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const sessions = provider.scanSessions();
+
+			expect(sessions[0].prompt).toBe("Help me refactor");
+		});
+	});
+
+	describe("findSessionFile", () => {
+		it("finds file in nested directory by sessionId", () => {
+			writeSessionFile("2026/03/04/rollout-1709550000-sess-find.jsonl", [
+				sessionMeta("sess-find", { title: "Found" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const found = provider.findSessionFile("sess-find");
+			expect(found).toBe(
+				path.join(tmpDir, "2026/03/04/rollout-1709550000-sess-find.jsonl"),
+			);
+		});
+
+		it("returns null for missing session", () => {
+			const provider = new CodexSessionProvider(tmpDir);
+			const found = provider.findSessionFile("nonexistent-session");
+			expect(found).toBeNull();
+		});
+
+		it("caches found paths", () => {
+			writeSessionFile("2026/03/04/rollout-1000-sess-cache.jsonl", [
+				sessionMeta("sess-cache", { title: "Cached" }),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const first = provider.findSessionFile("sess-cache");
+			const second = provider.findSessionFile("sess-cache");
+			expect(first).toBe(second);
+		});
+
+		it("re-searches when cached path no longer exists", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-sess-stale.jsonl",
+				[sessionMeta("sess-stale", { title: "Stale" })],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const first = provider.findSessionFile("sess-stale");
+			expect(first).toBe(filePath);
+
+			// Remove the file and create a new one in a different location
+			fs.rmSync(filePath);
+			const newPath = writeSessionFile(
+				"2026/03/05/rollout-2000-sess-stale.jsonl",
+				[sessionMeta("sess-stale", { title: "Moved" })],
+			);
+
+			const second = provider.findSessionFile("sess-stale");
+			expect(second).toBe(newPath);
+		});
+
+		it("returns null when sessions dir does not exist", () => {
+			const provider = new CodexSessionProvider("/nonexistent/path");
+			expect(provider.findSessionFile("any-id")).toBeNull();
+		});
+	});
+
+	describe("readTitle", () => {
+		it("reads title from session_meta payload", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-sess-title.jsonl",
+				[sessionMeta("sess-title", { title: "My Session Title" })],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const title = provider.readTitle(filePath);
+			expect(title).toBe("My Session Title");
+		});
+
+		it("falls back to first_user_message when title is absent", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-sess-msg.jsonl",
+				[sessionMeta("sess-msg", { first_user_message: "User prompt text" })],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const title = provider.readTitle(filePath);
+			expect(title).toBe("User prompt text");
+		});
+
+		it("returns null for empty file", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-empty.jsonl",
+				[],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const title = provider.readTitle(filePath);
+			expect(title).toBeNull();
+		});
+
+		it("returns null when first line is not session_meta", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-no-meta.jsonl",
+				[JSON.stringify({ type: "user_message", content: "Hello" })],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const title = provider.readTitle(filePath);
+			expect(title).toBeNull();
+		});
+
+		it("returns null when session_meta has no title or first_user_message", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-no-title.jsonl",
+				[
+					JSON.stringify({
+						type: "session_meta",
+						payload: { id: "x", cwd: "/tmp" },
+					}),
+				],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			const title = provider.readTitle(filePath);
+			expect(title).toBeNull();
+		});
+	});
+
+	describe("readName", () => {
+		it("reads thread_name from session index", () => {
+			writeSessionIndex([
+				JSON.stringify({
+					id: "sess-name",
+					thread_name: "Renamed Session",
+					updated_at: "2026-03-06T16:28:46.350986641Z",
+				}),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir, sessionIndexPath);
+			expect(provider.readName("sess-name")).toBe("Renamed Session");
+		});
+
+		it("returns null when session index does not contain the session", () => {
+			writeSessionIndex([
+				JSON.stringify({
+					id: "other-session",
+					thread_name: "Other Name",
+					updated_at: "2026-03-06T16:28:46.350986641Z",
+				}),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir, sessionIndexPath);
+			expect(provider.readName("missing-session")).toBeNull();
+		});
+
+		it("takes the last thread_name for a session id", () => {
+			writeSessionIndex([
+				JSON.stringify({
+					id: "sess-dup",
+					thread_name: "First Name",
+					updated_at: "2026-03-06T16:28:46.350986641Z",
+				}),
+				JSON.stringify({
+					id: "sess-dup",
+					thread_name: "Final Name",
+					updated_at: "2026-03-06T16:29:46.350986641Z",
+				}),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir, sessionIndexPath);
+			expect(provider.readName("sess-dup")).toBe("Final Name");
+		});
+
+		it("reloads session index after cache clear", () => {
+			writeSessionIndex([
+				JSON.stringify({
+					id: "sess-clear-name",
+					thread_name: "Initial Name",
+					updated_at: "2026-03-06T16:28:46.350986641Z",
+				}),
+			]);
+
+			const provider = new CodexSessionProvider(tmpDir, sessionIndexPath);
+			expect(provider.readName("sess-clear-name")).toBe("Initial Name");
+
+			writeSessionIndex([
+				JSON.stringify({
+					id: "sess-clear-name",
+					thread_name: "Updated Name",
+					updated_at: "2026-03-06T16:29:46.350986641Z",
+				}),
+			]);
+			provider.clearCache("sess-clear-name");
+
+			expect(provider.readName("sess-clear-name")).toBe("Updated Name");
+		});
+	});
+
+	describe("clearCache", () => {
+		it("clears cached path for a session", () => {
+			const filePath = writeSessionFile(
+				"2026/03/04/rollout-1000-sess-clear.jsonl",
+				[sessionMeta("sess-clear", { title: "Clear" })],
+			);
+
+			const provider = new CodexSessionProvider(tmpDir);
+			expect(provider.findSessionFile("sess-clear")).toBe(filePath);
+
+			// Remove the file
+			fs.rmSync(filePath);
+
+			// Without clearing cache, it would still try the old path then re-search
+			provider.clearCache("sess-clear");
+
+			// After clearing, should return null since file is gone
+			expect(provider.findSessionFile("sess-clear")).toBeNull();
+		});
+	});
+
+	it("has toolId codex", () => {
+		const provider = new CodexSessionProvider(tmpDir);
+		expect(provider.toolId).toBe("codex");
+	});
+});
