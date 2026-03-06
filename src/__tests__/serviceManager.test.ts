@@ -7,6 +7,7 @@ vi.mock("node:child_process", () => ({
 	execSync: vi.fn(),
 }));
 
+import { execSync } from "node:child_process";
 import { TmuxIntegration } from "../agents/tmux";
 import { ServiceManager } from "../services/serviceManager";
 import { Store } from "../storage/store";
@@ -101,12 +102,16 @@ describe("ServiceManager", () => {
 	});
 
 	describe("restartService", () => {
-		it("updates status to running", () => {
+		it("restarts the tmux session and updates status to running", () => {
 			const svc = manager.createService("f1", "dev", "npm run dev");
 			manager.stopService(svc.id, "f1");
-			manager.restartService(svc.id, "f1");
+			manager.restartService(svc.id, "f1", "/repo");
 			const services = manager.getServices("f1");
 			expect(services[0].status).toBe("running");
+			expect(vi.mocked(execSync)).toHaveBeenCalledWith(
+				`tmux new-session -d -s "${svc.tmuxSession}" "npm run dev"`,
+				expect.objectContaining({ cwd: "/repo" }),
+			);
 		});
 	});
 
@@ -128,6 +133,13 @@ describe("ServiceManager", () => {
 	});
 
 	describe("refreshStatuses", () => {
+		it("refreshes stale state when services are read", () => {
+			const svc = manager.createService("f1", "dev", "npm run dev");
+			vi.spyOn(tmux, "isSessionAlive").mockReturnValue(false);
+			const services = manager.getServices("f1");
+			expect(services.find((s) => s.id === svc.id)?.status).toBe("stopped");
+		});
+
 		it("marks service as stopped when tmux session is gone", () => {
 			const svc = manager.createService("f1", "dev", "npm run dev");
 			vi.spyOn(tmux, "isSessionAlive").mockReturnValue(false);

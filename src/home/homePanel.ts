@@ -277,7 +277,9 @@ export class HomePanel {
 	private handleRestartService(featureId: string, serviceId: string): void {
 		const ctx = this.projectManager.findContextByFeatureId(featureId);
 		if (!ctx) return;
-		ctx.serviceManager.restartService(serviceId, featureId);
+		const feature = ctx.featureManager.getFeature(featureId);
+		if (!feature) return;
+		ctx.serviceManager.restartService(serviceId, featureId, feature.worktreePath);
 		this.projectManager.notifyChange();
 	}
 

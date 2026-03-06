@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
 import type { TmuxIntegration } from "../agents/tmux";
 import type { Store } from "../storage/store";
-import type { Service } from "../types";
+import type { Service, ServiceStatus } from "../types";
+import { exec } from "../utils/platform";
 
 export class ServiceManager {
 	private servicesByFeature = new Map<string, Service[]>();
@@ -16,6 +17,7 @@ export class ServiceManager {
 	}
 
 	getServices(featureId: string): Service[] {
+		this.refreshStatuses(featureId);
 		return [...this.loadServices(featureId)];
 	}
 
@@ -48,12 +50,13 @@ export class ServiceManager {
 		this.saveServices(featureId, services);
 	}
 
-	restartService(serviceId: string, featureId: string): void {
+	restartService(serviceId: string, featureId: string, cwd: string): void {
 		const services = this.loadServices(featureId);
 		const service = services.find((s) => s.id === serviceId);
 		if (!service) return;
+
 		this.tmux.killSession(service.tmuxSession);
-		service.status = "running";
+		service.status = this.startServiceSession(service, cwd);
 		this.saveServices(featureId, services);
 	}
 
@@ -142,5 +145,20 @@ export class ServiceManager {
 		}
 
 		return services;
+	}
+
+	private startServiceSession(service: Service, cwd: string): ServiceStatus {
+		try {
+			exec(this.tmux.createCommand(service.tmuxSession, service.command), {
+				cwd,
+			});
+			this.tmux.configureServiceSession(service.tmuxSession);
+			return this.tmux.isSessionAlive(service.tmuxSession)
+				? "running"
+				: "errored";
+		} catch (err) {
+			console.warn(`[ServiceManager] service tmux create failed: ${err}`);
+			return "errored";
+		}
 	}
 }
