@@ -75,6 +75,17 @@ export class TmuxIntegration {
 		return `tmux attach-session -t "${sessionName}"`;
 	}
 
+	listSessions(): string[] {
+		try {
+			return exec('tmux list-sessions -F "#{session_name}"')
+				.split("\n")
+				.map((line) => line.trim())
+				.filter(Boolean);
+		} catch {
+			return [];
+		}
+	}
+
 	killSession(sessionName: string): void {
 		try {
 			exec(`tmux kill-session -t "${sessionName}"`);
@@ -98,11 +109,17 @@ export class TmuxIntegration {
 			return this.isSessionAlive(preferredName);
 		}
 
-		if (this.isSessionAlive(preferredName)) {
+		const preferredAlive = this.isSessionAlive(preferredName);
+		const currentAlive = this.isSessionAlive(currentName);
+
+		if (preferredAlive) {
+			if (currentAlive) {
+				this.killSession(currentName);
+			}
 			return true;
 		}
 
-		if (!this.isSessionAlive(currentName)) {
+		if (!currentAlive) {
 			return false;
 		}
 

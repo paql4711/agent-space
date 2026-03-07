@@ -732,6 +732,36 @@ export async function activate(
 			);
 			if (!pick) return;
 
+			const ctx = projectManager.getContext(pick.id);
+			const features = ctx?.featureManager.getFeatures() ?? [];
+			if (features.length > 0) {
+				const choice = await vscode.window.showWarningMessage(
+					`Remove project "${pick.label}"? This will kill all tmux sessions for ${features.length} feature${features.length === 1 ? "" : "s"}.`,
+					{ modal: true },
+					"Unregister Only",
+					"Full Delete",
+					"Cancel",
+				);
+				if (!choice || choice === "Cancel") return;
+
+				for (const feature of features) {
+					sessionNameSyncer.clearFeature(feature.id);
+				}
+				projectManager.killProjectSessions(pick.id, terminalController);
+				if (choice === "Full Delete") {
+					projectManager.deleteProjectFeatureData(pick.id);
+				}
+			}
+
+			if (activeFeatureId) {
+				const activeCtx = projectManager.findContextByFeatureId(activeFeatureId);
+				if (activeCtx?.project.id === pick.id) {
+					activeFeatureId = null;
+					const home = HomePanel.getInstance();
+					if (home) home.showWelcome();
+				}
+			}
+
 			projectManager.removeProject(pick.id);
 		}),
 	);

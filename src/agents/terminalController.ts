@@ -39,7 +39,8 @@ export class TerminalController implements vscode.Disposable {
 		const color = AGENT_COLORS[agentIndex % AGENT_COLORS.length];
 		const cwd = agent.worktreePath ?? feature.worktreePath;
 
-		const sessionName = this.tmux.sessionName(feature.id, agent.id);
+		const sessionName =
+			agent.tmuxSession ?? this.tmux.sessionName(feature.id, agent.id);
 		const legacySessionName = this.tmux.legacySessionName(feature.id, agent.id);
 		let sessionReady = this.tmux.adoptSession(sessionName, legacySessionName);
 
@@ -174,7 +175,8 @@ export class TerminalController implements vscode.Disposable {
 		const name = `[${feature.name}] ${agent.name}`;
 		const color = AGENT_COLORS[agentIndex % AGENT_COLORS.length];
 		const cwd = agent.worktreePath ?? feature.worktreePath;
-		const sessionName = this.tmux.sessionName(feature.id, agent.id);
+		const sessionName =
+			agent.tmuxSession ?? this.tmux.sessionName(feature.id, agent.id);
 		const legacySessionName = this.tmux.legacySessionName(feature.id, agent.id);
 		this.tmux.adoptSession(sessionName, legacySessionName);
 
@@ -231,8 +233,12 @@ export class TerminalController implements vscode.Disposable {
 			this.terminals.delete(agentId);
 		}
 
-		const sessionName = this.tmux.sessionName(featureId, agentId);
+		const sessionName = this.resolveAgentSessionName(featureId, agentId);
 		this.tmux.killSession(sessionName);
+		const legacySessionName = this.tmux.legacySessionName(featureId, agentId);
+		if (legacySessionName !== sessionName) {
+			this.tmux.killSession(legacySessionName);
+		}
 	}
 
 	killFeatureTerminals(featureId: string): void {
@@ -276,7 +282,8 @@ export class TerminalController implements vscode.Disposable {
 			if (agent.status === "done") continue;
 			if (this.terminals.has(agent.id)) continue;
 
-			const sessionName = this.tmux.sessionName(feature.id, agent.id);
+			const sessionName =
+				agent.tmuxSession ?? this.tmux.sessionName(feature.id, agent.id);
 			const legacySessionName = this.tmux.legacySessionName(
 				feature.id,
 				agent.id,
@@ -297,5 +304,13 @@ export class TerminalController implements vscode.Disposable {
 		for (const d of this.disposables) {
 			d.dispose();
 		}
+	}
+
+	private resolveAgentSessionName(featureId: string, agentId: string): string {
+		const ctx = this.projectManager.findContextByFeatureId(featureId);
+		const agent = ctx?.agentManager
+			.getAgents(featureId)
+			.find((candidate) => candidate.id === agentId);
+		return agent?.tmuxSession ?? this.tmux.sessionName(featureId, agentId);
 	}
 }

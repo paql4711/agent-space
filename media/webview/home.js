@@ -40,6 +40,26 @@ function focusService(featureId, serviceId) {
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: called from HTML onclick
+function killAgentSession(featureId, agentId) {
+	send("killAgentSession", { featureId, agentId });
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: called from HTML onclick
+function killServiceSession(featureId, serviceId) {
+	send("killServiceSession", { featureId, serviceId });
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: called from HTML onclick
+function killFeatureSessions(featureId) {
+	send("killFeatureSessions", { featureId });
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: called from HTML onclick
+function killProjectSessions(projectId) {
+	send("killProjectSessions", { projectId });
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: called from HTML onclick
 function markAgentDone(featureId, agentId, agentName) {
 	showConfirmation(
 		`Mark "${agentName}" as done?`,

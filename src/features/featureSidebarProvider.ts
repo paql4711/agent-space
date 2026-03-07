@@ -133,6 +133,12 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 	private handleStopService(featureId: string, serviceId: string): void {
 		const ctx = this.projectManager.findContextByFeatureId(featureId);
 		if (!ctx) return;
+		const service = ctx.serviceManager
+			.getServices(featureId)
+			.find((candidate) => candidate.id === serviceId);
+		if (service && this.terminalController) {
+			this.terminalController.killServiceTerminal(service.id, service.tmuxSession);
+		}
 		ctx.serviceManager.stopService(serviceId, featureId);
 		this.projectManager.notifyChange();
 	}

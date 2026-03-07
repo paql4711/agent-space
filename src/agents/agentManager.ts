@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { TmuxIntegration } from "./tmux";
 import type { Store } from "../storage/store";
 import type { Agent, AgentStatus, Feature } from "../types";
 import { isWorktreePathSafe } from "../utils/worktreeGuard";
@@ -13,6 +14,7 @@ export class AgentManager {
 		private readonly store: Store,
 		private readonly repoRoot: string,
 		private readonly worktreeBase: string,
+		private readonly tmux: TmuxIntegration,
 	) {}
 
 	invalidateFeature(featureId: string): void {
@@ -56,6 +58,7 @@ export class AgentManager {
 			featureId: feature.id,
 			name,
 			sessionId,
+			tmuxSession: this.tmux.sessionName(feature.id, id),
 			worktreePath,
 			toolId,
 			status: "stopped",
@@ -189,7 +192,11 @@ export class AgentManager {
 
 	private loadAgents(featureId: string): Agent[] {
 		if (!this.agentsByFeature.has(featureId)) {
-			this.agentsByFeature.set(featureId, this.store.loadAgents(featureId));
+			const agents = this.normalizeAgentSessions(
+				featureId,
+				this.store.loadAgents(featureId),
+			);
+			this.agentsByFeature.set(featureId, agents);
 		}
 		// biome-ignore lint/style/noNonNullAssertion: guaranteed by has() check above
 		return this.agentsByFeature.get(featureId)!;
@@ -198,6 +205,31 @@ export class AgentManager {
 	private saveAgents(featureId: string, agents: Agent[]): void {
 		this.agentsByFeature.set(featureId, agents);
 		this.store.saveAgents(featureId, agents);
+	}
+
+	private normalizeAgentSessions(featureId: string, agents: Agent[]): Agent[] {
+		let changed = false;
+
+		for (const agent of agents) {
+			const preferredSession = this.tmux.sessionName(featureId, agent.id);
+			const currentSession =
+				agent.tmuxSession ?? this.tmux.legacySessionName(featureId, agent.id);
+
+			if (currentSession !== preferredSession) {
+				this.tmux.adoptSession(preferredSession, currentSession);
+			}
+
+			if (agent.tmuxSession !== preferredSession) {
+				agent.tmuxSession = preferredSession;
+				changed = true;
+			}
+		}
+
+		if (changed) {
+			this.store.saveAgents(featureId, agents);
+		}
+
+		return agents;
 	}
 
 	private removeWorktree(worktreePath: string): void {
