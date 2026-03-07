@@ -46,8 +46,9 @@ Optional:
 1. Install the extension.
 2. Open the **Agent Space** icon in the VS Code activity bar.
 3. Run `Agent Space: Add Project` and select any Git repository.
-4. Run `Agent Space: New Feature` to create a worktree and start the first agent with an available CLI.
-5. Add more agents or run a script from the feature actions as needed.
+4. On first start, choose the default coding CLI when prompted.
+5. Run `Agent Space: New Feature` to create a worktree and start the first agent with an available CLI.
+6. Add more agents or run a script from the feature actions as needed.
 
 ## Core Features
 
@@ -96,7 +97,7 @@ All commands are available from the Command Palette.
 
 | Setting | Default | Description |
 |---|---|---|
-| `agentSpace.defaultTool` | `"claude"` | Preferred built-in tool preset for new agents |
+| `agentSpace.defaultTool` | unset | Preferred coding tool ID for new agents. Agent Space prompts for it on first start and stores the selection in user settings |
 | `agentSpace.codingTools` | `[]` | Register any custom terminal-based coding CLI with `id`, `name`, `command`, and optional `args` |
 | `agentSpace.worktreeBasePath` | `".worktrees"` | Base directory for worktrees, relative to the project root |
 | `agentSpace.enablePerAgentIsolation` | `false` | Give each agent its own worktree instead of sharing one per feature |

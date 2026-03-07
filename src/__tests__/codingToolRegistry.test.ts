@@ -92,8 +92,8 @@ describe("CodingToolRegistry", () => {
 	});
 
 	describe("getDefaultToolId", () => {
-		it("returns 'claude' by default", () => {
-			expect(registry.getDefaultToolId()).toBe("claude");
+		it("returns undefined when unset", () => {
+			expect(registry.getDefaultToolId()).toBeUndefined();
 		});
 
 		it("returns configured default", () => {
@@ -112,6 +112,13 @@ describe("CodingToolRegistry", () => {
 	});
 
 	describe("getPreferredAvailableTool", () => {
+		it("falls back to the first available tool when no default is configured", () => {
+			mockCommandExists.mockImplementation(
+				(command) => command === "codex" || command === "opencode",
+			);
+			expect(registry.getPreferredAvailableTool()?.id).toBe("codex");
+		});
+
 		it("prefers the configured default when it is available", () => {
 			mockConfig({ defaultTool: "copilot" });
 			mockCommandExists.mockImplementation((command) => command === "copilot");

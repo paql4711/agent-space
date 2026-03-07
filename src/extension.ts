@@ -11,11 +11,14 @@ import { FeatureSidebarProvider } from "./features/featureSidebarProvider";
 import { HomePanel } from "./home/homePanel";
 import { PrerequisiteChecker } from "./prerequisites";
 import { ProjectManager } from "./projects/projectManager";
+import { ensureDefaultToolConfigured } from "./startup/defaultToolInitializer";
 import { GlobalStore } from "./storage/globalStore";
 
 let activeFeatureId: string | null = null;
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(
+	context: vscode.ExtensionContext,
+): Promise<void> {
 	const prerequisites = new PrerequisiteChecker();
 	const { ok, missing } = prerequisites.checkRequired();
 	if (!ok) {
@@ -69,18 +72,21 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(storageWatcher);
 
 	const toolRegistry = new CodingToolRegistry();
-	const defaultTool = toolRegistry.resolveAgentTool(
-		toolRegistry.getDefaultToolId(),
-	);
+	await ensureDefaultToolConfigured(toolRegistry, globalStore);
+
+	const defaultToolId = toolRegistry.getDefaultToolId();
 	const availableTools = toolRegistry.getAvailableTools();
 	if (availableTools.length === 0) {
 		vscode.window.showWarningMessage(
 			"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
 		);
-	} else if (!toolRegistry.isToolAvailable(defaultTool)) {
-		vscode.window.showWarningMessage(
-			`${defaultTool.name} CLI not found. New agents will use ${availableTools[0].name} until the default tool is installed.`,
-		);
+	} else if (defaultToolId) {
+		const defaultTool = toolRegistry.resolveAgentTool(defaultToolId);
+		if (!toolRegistry.isToolAvailable(defaultTool)) {
+			vscode.window.showWarningMessage(
+				`${defaultTool.name} CLI not found. New agents will use ${availableTools[0].name} until the default tool is installed.`,
+			);
+		}
 	}
 
 	const terminalController = new TerminalController(

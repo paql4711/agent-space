@@ -29,10 +29,10 @@ export class CodingToolRegistry {
 		return this.getTools().find((t) => t.id === toolId);
 	}
 
-	getDefaultToolId(): string {
+	getDefaultToolId(): string | undefined {
 		return vscode.workspace
 			.getConfiguration("agentSpace")
-			.get<string>("defaultTool", "claude");
+			.get<string | undefined>("defaultTool");
 	}
 
 	getAvailableTools(): CodingTool[] {
