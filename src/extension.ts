@@ -411,7 +411,7 @@ export async function activate(
 				if (!feature) return;
 
 				// Tool selection — only show installed tools
-				const tools = toolRegistry.getAvailableTools();
+				const tools = toolRegistry.getAvailableToolsPreferredFirst();
 				if (tools.length === 0) {
 					vscode.window.showErrorMessage(
 						"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
