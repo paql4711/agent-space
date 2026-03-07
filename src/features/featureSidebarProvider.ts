@@ -9,6 +9,7 @@ import {
 	ICON_CHEVRON_DOWN,
 	ICON_CHEVRON_RIGHT,
 	ICON_DELETE,
+	ICON_GIT,
 	ICON_REMOVE,
 	ICON_RESTART,
 	ICON_STOP,
@@ -116,6 +117,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				case "openWorkspace":
 					run("agentSpace.openWorkspace", message.featureId);
 					break;
+				case "openGitView":
+					run("agentSpace.openFeatureGitView", message.featureId);
+					break;
 			}
 		});
 	}
@@ -137,7 +141,10 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			.getServices(featureId)
 			.find((candidate) => candidate.id === serviceId);
 		if (service && this.terminalController) {
-			this.terminalController.killServiceTerminal(service.id, service.tmuxSession);
+			this.terminalController.killServiceTerminal(
+				service.id,
+				service.tmuxSession,
+			);
 		}
 		ctx.serviceManager.stopService(serviceId, featureId);
 		this.projectManager.notifyChange();
@@ -437,6 +444,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			<div class="feature-quick-actions">
 				<button class="action-btn" onclick="addAgent(event, '${feature.id}')" title="Add Agent">${ICON_ADD_AGENT}</button>
 				<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
+				<button class="action-btn" onclick="openGitView(event, '${feature.id}')" title="Open Git View">${ICON_GIT}</button>
 			</div>
 		</div>`;
 	}

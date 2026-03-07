@@ -127,6 +127,9 @@ function quickAction(action, featureId) {
 		case "createPR":
 			send("createPR", { featureId });
 			break;
+		case "openGitView":
+			send("openGitView", { featureId });
+			break;
 		case "openFolder":
 			send("openFolder", { featureId });
 			break;

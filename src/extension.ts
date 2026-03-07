@@ -9,6 +9,11 @@ import { TerminalController } from "./agents/terminalController";
 import { TmuxIntegration } from "./agents/tmux";
 import { validateFeatureNameInput } from "./features/featureName";
 import { FeatureSidebarProvider } from "./features/featureSidebarProvider";
+import {
+	getGitViewHandoffAction,
+	openFeatureGitView,
+	PENDING_GIT_VIEW_HANDOFF_PREF,
+} from "./git/gitViewHandoff";
 import { HomePanel } from "./home/homePanel";
 import { PrerequisiteChecker } from "./prerequisites";
 import { ProjectManager } from "./projects/projectManager";
@@ -58,6 +63,16 @@ export async function activate(
 		worktreeRelativePath,
 		tmux,
 	);
+	const gitViewHandoffAction = getGitViewHandoffAction(
+		globalStore.getPreference(PENDING_GIT_VIEW_HANDOFF_PREF),
+		vscode.workspace.workspaceFolders,
+	);
+	if (gitViewHandoffAction !== "noop") {
+		globalStore.setPreference(PENDING_GIT_VIEW_HANDOFF_PREF, undefined);
+		if (gitViewHandoffAction === "openScm") {
+			void vscode.commands.executeCommand("workbench.view.scm");
+		}
+	}
 
 	// Cross-window sync via VS Code's native file watcher
 	const storageWatcher = vscode.workspace.createFileSystemWatcher(
@@ -626,6 +641,29 @@ export async function activate(
 	);
 
 	// Command: Create PR
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.openFeatureGitView",
+			async (featureIdArg?: string) => {
+				await openFeatureGitView(
+					featureIdArg,
+					activeFeatureId,
+					(featureId) => {
+						const ctx = projectManager.findContextByFeatureId(featureId);
+						return ctx?.featureManager.getFeature(featureId);
+					},
+					globalStore,
+					(worktreePath) =>
+						vscode.commands.executeCommand(
+							"vscode.openFolder",
+							vscode.Uri.file(worktreePath),
+							{ forceNewWindow: true },
+						),
+				);
+			},
+		),
+	);
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand(
 			"agentSpace.createPR",

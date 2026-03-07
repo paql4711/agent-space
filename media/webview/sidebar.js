@@ -28,6 +28,11 @@ function addService(e, id) {
 	send("addService", { featureId: id });
 }
 
+function openGitView(e, id) {
+	e.stopPropagation();
+	send("openGitView", { featureId: id });
+}
+
 function syncNames(e) {
 	e.stopPropagation();
 	send("syncNames");
