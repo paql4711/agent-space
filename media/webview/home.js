@@ -74,13 +74,8 @@ function reopenAgent(featureId, agentId) {
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: called from HTML onclick
-function deleteFeature(featureId, featureName) {
-	showConfirmation(
-		`Delete ${featureName}?`,
-		"This removes the worktree and all agent data. This cannot be undone.",
-		() => send("deleteFeature", { featureId }),
-		true,
-	);
+function deleteFeature(featureId) {
+	send("deleteFeature", { featureId });
 }
 
 // -- Inline Confirmation Banner ------------------------------

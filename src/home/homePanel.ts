@@ -1224,7 +1224,7 @@ export class HomePanel {
 			<button class="quick-action-btn" onclick="quickAction('openFolder', '${feature.id}')">
 				${ICON_FOLDER} Open Folder
 			</button>
-			<button class="quick-action-btn danger" onclick="deleteFeature('${feature.id}', '${this.escapeHtml(feature.branch)}')">
+			<button class="quick-action-btn danger" onclick="deleteFeature('${feature.id}')">
 				Delete Feature
 			</button>
 		</div>`;

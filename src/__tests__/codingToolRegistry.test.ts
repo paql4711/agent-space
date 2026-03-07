@@ -111,6 +111,30 @@ describe("CodingToolRegistry", () => {
 		});
 	});
 
+	describe("getAvailableToolsPreferredFirst", () => {
+		it("moves the configured default to the front when it is available", () => {
+			mockConfig({ defaultTool: "copilot" });
+			mockCommandExists.mockImplementation(
+				(command) => command === "codex" || command === "copilot",
+			);
+
+			expect(
+				registry.getAvailableToolsPreferredFirst().map((tool) => tool.id),
+			).toEqual(["copilot", "codex"]);
+		});
+
+		it("keeps the original order when the default is unavailable", () => {
+			mockConfig({ defaultTool: "claude" });
+			mockCommandExists.mockImplementation(
+				(command) => command === "codex" || command === "copilot",
+			);
+
+			expect(
+				registry.getAvailableToolsPreferredFirst().map((tool) => tool.id),
+			).toEqual(["codex", "copilot"]);
+		});
+	});
+
 	describe("getPreferredAvailableTool", () => {
 		it("falls back to the first available tool when no default is configured", () => {
 			mockCommandExists.mockImplementation(

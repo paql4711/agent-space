@@ -39,17 +39,31 @@ export class CodingToolRegistry {
 		return this.getTools().filter((tool) => this.isToolAvailable(tool));
 	}
 
-	getPreferredAvailableTool(): CodingTool | undefined {
+	getAvailableToolsPreferredFirst(): CodingTool[] {
 		const availableTools = this.getAvailableTools();
+		const defaultToolId = this.getDefaultToolId();
+		if (!defaultToolId) {
+			return availableTools;
+		}
+
+		const preferredIndex = availableTools.findIndex(
+			(tool) => tool.id === defaultToolId,
+		);
+		if (preferredIndex <= 0) {
+			return availableTools;
+		}
+
+		const [preferredTool] = availableTools.splice(preferredIndex, 1);
+		availableTools.unshift(preferredTool);
+		return availableTools;
+	}
+
+	getPreferredAvailableTool(): CodingTool | undefined {
+		const availableTools = this.getAvailableToolsPreferredFirst();
 		if (availableTools.length === 0) {
 			return undefined;
 		}
-
-		const defaultToolId = this.getDefaultToolId();
-		return (
-			availableTools.find((tool) => tool.id === defaultToolId) ??
-			availableTools[0]
-		);
+		return availableTools[0];
 	}
 
 	resolveAgentTool(toolId?: string): CodingTool {
