@@ -83,6 +83,7 @@ function toggleStoppedServices(e, featureId) {
 let _menuFeatureId = "";
 let _menuAgentId = "";
 const _agentMenu = document.getElementById("agentContextMenu");
+const MENU_VIEWPORT_GUTTER = 8;
 
 document.getElementById("menuRename").addEventListener("click", (e) => {
 	e.stopPropagation();
@@ -99,6 +100,7 @@ document.getElementById("menuMarkDone").addEventListener("click", (e) => {
 function showAgentMenu(e, featureId, agentId) {
 	e.preventDefault();
 	e.stopPropagation();
+	if (!_agentMenu) return;
 
 	// Close other menus
 	closeAllMenus();
@@ -106,14 +108,34 @@ function showAgentMenu(e, featureId, agentId) {
 	_menuFeatureId = featureId;
 	_menuAgentId = agentId;
 
-	const rect = e.currentTarget.getBoundingClientRect();
-	_agentMenu.style.left = e.clientX + "px";
-	_agentMenu.style.top = e.clientY + "px";
+	_agentMenu.style.visibility = "hidden";
 	_agentMenu.classList.add("visible");
+	_agentMenu.style.left = "0px";
+	_agentMenu.style.top = "0px";
+
+	const menuWidth = _agentMenu.offsetWidth;
+	const menuHeight = _agentMenu.offsetHeight;
+	const maxLeft = Math.max(
+		MENU_VIEWPORT_GUTTER,
+		window.innerWidth - menuWidth - MENU_VIEWPORT_GUTTER,
+	);
+	const maxTop = Math.max(
+		MENU_VIEWPORT_GUTTER,
+		window.innerHeight - menuHeight - MENU_VIEWPORT_GUTTER,
+	);
+	const left = Math.min(Math.max(e.clientX, MENU_VIEWPORT_GUTTER), maxLeft);
+	const top = Math.min(Math.max(e.clientY, MENU_VIEWPORT_GUTTER), maxTop);
+
+	_agentMenu.style.left = left + "px";
+	_agentMenu.style.top = top + "px";
+	_agentMenu.style.visibility = "";
 }
 
 function closeAllMenus() {
-	if (_agentMenu) _agentMenu.classList.remove("visible");
+	if (_agentMenu) {
+		_agentMenu.classList.remove("visible");
+		_agentMenu.style.visibility = "";
+	}
 }
 
 // Global click to close menus
@@ -129,6 +151,10 @@ window.addEventListener(
 	},
 	true,
 );
+
+window.addEventListener("resize", () => {
+	closeAllMenus();
+});
 
 function toggleIsolation(e, featureId) {
 	e.stopPropagation();

@@ -507,13 +507,14 @@ button {
 .context-menu {
 	display: none;
 	position: fixed;
-	z-index: 1000;
+	z-index: 2147483647;
 	background-color: var(--vscode-menu-background);
 	border: 1px solid var(--vscode-menu-border);
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 	border-radius: 4px;
 	padding: 4px 0;
 	min-width: 160px;
+	max-width: calc(100vw - 16px);
 	color: var(--vscode-menu-foreground);
 }
 
@@ -530,6 +531,7 @@ button {
 	font-size: 13px;
 	cursor: pointer;
 	color: inherit;
+	white-space: normal;
 }
 
 .context-menu-item:hover {
