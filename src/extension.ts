@@ -13,6 +13,7 @@ import { PrerequisiteChecker } from "./prerequisites";
 import { ProjectManager } from "./projects/projectManager";
 import { ensureDefaultToolConfigured } from "./startup/defaultToolInitializer";
 import { GlobalStore } from "./storage/globalStore";
+import { AgentWorkspaceIsolation } from "./workspace/agentWorkspaceIsolation";
 
 let activeFeatureId: string | null = null;
 
@@ -30,6 +31,7 @@ export async function activate(
 
 	const storagePath = context.globalStorageUri.fsPath;
 	const globalStore = new GlobalStore(storagePath);
+	const workspaceIsolation = new AgentWorkspaceIsolation();
 
 	// One-time migration from Memento to file-based GlobalStore
 	if (!globalStore.hasProjectsFile()) {
@@ -110,18 +112,107 @@ export async function activate(
 		),
 	);
 
+	let sidebarVisible = false;
+	let homePanelVisible = false;
+	let homePanelActive = false;
+
+	const ensureHomePanel = () => {
+		const panel = HomePanel.createOrShow(
+			projectManager,
+			tmux,
+			toolRegistry,
+			context.extensionUri,
+			globalStore,
+			terminalController,
+		);
+		panel.onViewStateChange(({ active, visible }) => {
+			homePanelActive = active;
+			homePanelVisible = visible;
+			if (active || visible) {
+				void workspaceIsolation.enter();
+				return;
+			}
+
+			if (!sidebarVisible) {
+				if (activeFeatureId) {
+					terminalController.disposeFeatureTerminals(activeFeatureId);
+				}
+				void workspaceIsolation.leave();
+			}
+		});
+		return panel;
+	};
+
+	const showAgentSpace = async (featureId?: string): Promise<HomePanel> => {
+		const panel = ensureHomePanel();
+		homePanelVisible = true;
+		homePanelActive = true;
+		if (featureId) {
+			activeFeatureId = featureId;
+			panel.showFeature(featureId);
+		} else {
+			panel.showWelcome();
+		}
+		await workspaceIsolation.enter();
+		return panel;
+	};
+
+	const activateFeatureInCurrentWindow = async (
+		featureId: string,
+	): Promise<void> => {
+		if (activeFeatureId && activeFeatureId !== featureId) {
+			terminalController.disposeFeatureTerminals(activeFeatureId);
+		}
+
+		activeFeatureId = featureId;
+		const ctx = projectManager.findContextByFeatureId(featureId);
+		if (!ctx) return;
+
+		const feature = ctx.featureManager.getFeature(featureId);
+		if (!feature) return;
+
+		const agents = ctx.agentManager.getAgents(featureId);
+		if (agents.length === 0) {
+			const initialTool = toolRegistry.getPreferredAvailableTool();
+			if (!initialTool) {
+				vscode.window.showErrorMessage(
+					"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
+				);
+				return;
+			}
+			const agent = ctx.agentManager.createAgent(feature, initialTool.id);
+			terminalController.createTerminal(feature, agent, 0);
+		} else {
+			terminalController.reconnectTmuxSessions(feature);
+		}
+
+		await showAgentSpace(featureId);
+	};
+
 	sidebarProvider.onVisibilityChange((visible) => {
-		if (!activeFeatureId) return;
-		if (visible) {
+		sidebarVisible = visible;
+		if (!visible) {
+			if (!homePanelVisible && !homePanelActive) {
+				if (activeFeatureId) {
+					terminalController.disposeFeatureTerminals(activeFeatureId);
+				}
+				void workspaceIsolation.leave();
+			}
+			return;
+		}
+
+		if (activeFeatureId) {
 			const ctx = projectManager.findContextByFeatureId(activeFeatureId);
 			if (!ctx) return;
 			const feature = ctx.featureManager.getFeature(activeFeatureId);
 			if (feature) {
 				terminalController.reconnectTmuxSessions(feature);
 			}
-		} else {
-			terminalController.disposeFeatureTerminals(activeFeatureId);
+			void showAgentSpace(activeFeatureId);
+			return;
 		}
+
+		void showAgentSpace();
 	});
 
 	const claudeProvider = new ClaudeSessionProvider();
@@ -184,28 +275,10 @@ export async function activate(
 		if (home) home.refresh();
 	});
 
-	// Auto-open HomePanel on activation
-	HomePanel.createOrShow(
-		projectManager,
-		tmux,
-		toolRegistry,
-		context.extensionUri,
-		globalStore,
-		terminalController,
-	);
-
 	// Command: Open Home
 	context.subscriptions.push(
-		vscode.commands.registerCommand("agentSpace.openHome", () => {
-			const panel = HomePanel.createOrShow(
-				projectManager,
-				tmux,
-				toolRegistry,
-				context.extensionUri,
-				globalStore,
-				terminalController,
-			);
-			panel.showWelcome();
+		vscode.commands.registerCommand("agentSpace.openHome", async () => {
+			await showAgentSpace();
 		}),
 	);
 
@@ -297,16 +370,14 @@ export async function activate(
 
 					const initialTool = toolRegistry.getPreferredAvailableTool();
 					if (initialTool) {
-						const agent = ctx.agentManager.createAgent(feature, initialTool.id);
-						terminalController.createTerminal(feature, agent, 0);
+						ctx.agentManager.createAgent(feature, initialTool.id);
 					} else {
 						vscode.window.showErrorMessage(
 							"Feature created, but no coding tools are available to start the first agent.",
 						);
 					}
 					sidebarProvider.refresh();
-					const home = HomePanel.getInstance();
-					if (home) home.showFeature(feature.id);
+					await activateFeatureInCurrentWindow(feature.id);
 				} catch (err) {
 					const msg =
 						err instanceof Error ? err.message : "Failed to create feature";
@@ -320,35 +391,12 @@ export async function activate(
 	context.subscriptions.push(
 		vscode.commands.registerCommand(
 			"agentSpace.selectFeature",
-			(featureId: string) => {
-				if (activeFeatureId && activeFeatureId !== featureId) {
-					terminalController.disposeFeatureTerminals(activeFeatureId);
-				}
-
-				activeFeatureId = featureId;
+			async (featureId: string) => {
 				const ctx = projectManager.findContextByFeatureId(featureId);
 				if (!ctx) return;
 
-				const feature = ctx.featureManager.getFeature(featureId);
-				if (!feature) return;
-
-				const agents = ctx.agentManager.getAgents(featureId);
-				if (agents.length === 0) {
-					const initialTool = toolRegistry.getPreferredAvailableTool();
-					if (!initialTool) {
-						vscode.window.showErrorMessage(
-							"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
-						);
-						return;
-					}
-					const agent = ctx.agentManager.createAgent(feature, initialTool.id);
-					terminalController.createTerminal(feature, agent, 0);
-				} else {
-					terminalController.reconnectTmuxSessions(feature);
-				}
-
-				const home = HomePanel.getInstance();
-				if (home) home.showFeature(featureId);
+				if (!ctx.featureManager.getFeature(featureId)) return;
+				await activateFeatureInCurrentWindow(featureId);
 			},
 		),
 	);
@@ -357,18 +405,10 @@ export async function activate(
 	context.subscriptions.push(
 		vscode.commands.registerCommand(
 			"agentSpace.openWorkspace",
-			(featureIdArg?: string) => {
+			async (featureIdArg?: string) => {
 				const featureId = featureIdArg ?? activeFeatureId;
 				if (!featureId) return;
-				const panel = HomePanel.createOrShow(
-					projectManager,
-					tmux,
-					toolRegistry,
-					context.extensionUri,
-					globalStore,
-					terminalController,
-				);
-				panel.showFeature(featureId);
+				await activateFeatureInCurrentWindow(featureId);
 			},
 		),
 	);

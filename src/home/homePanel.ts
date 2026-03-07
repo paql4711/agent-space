@@ -21,6 +21,9 @@ export class HomePanel {
 	private terminalController?: TerminalController;
 	private currentFeatureId: string | null = null;
 	private refreshTimer?: ReturnType<typeof setInterval>;
+	private onViewStateChangeCallback?:
+		| ((state: { active: boolean; visible: boolean }) => void)
+		| undefined;
 	private disposables: vscode.Disposable[] = [];
 
 	public static createOrShow(
@@ -83,6 +86,16 @@ export class HomePanel {
 		this.terminalController = terminalController;
 
 		this.setupMessageHandler();
+		this.panel.onDidChangeViewState(
+			({ webviewPanel }) => {
+				this.onViewStateChangeCallback?.({
+					active: webviewPanel.active,
+					visible: webviewPanel.visible,
+				});
+			},
+			null,
+			this.disposables,
+		);
 		this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
 		// Restore last active feature or show welcome
@@ -98,6 +111,12 @@ export class HomePanel {
 
 	public setTerminalController(controller: TerminalController): void {
 		this.terminalController = controller;
+	}
+
+	public onViewStateChange(
+		callback: (state: { active: boolean; visible: boolean }) => void,
+	): void {
+		this.onViewStateChangeCallback = callback;
 	}
 
 	public showWelcome(): void {
@@ -142,6 +161,7 @@ export class HomePanel {
 	}
 
 	private dispose(): void {
+		this.onViewStateChangeCallback?.({ active: false, visible: false });
 		HomePanel.instance = undefined;
 		this.stopGitPolling();
 		for (const d of this.disposables) {
@@ -184,10 +204,10 @@ export class HomePanel {
 		switch (message.command) {
 			// Navigation
 			case "showWelcome":
-				this.showWelcome();
+				run("agentSpace.openHome");
 				break;
 			case "showFeature":
-				this.showFeature(message.featureId as string);
+				run("agentSpace.openWorkspace", message.featureId as string);
 				break;
 			// Agent actions
 			case "addAgent":
