@@ -769,7 +769,7 @@ export class HomePanel {
 				<button class="header-action-btn" onclick="quickAction('refresh', '${feature.id}')" title="Refresh">
 					${ICON_REFRESH}
 				</button>
-				<button class="header-action-btn" onclick="quickAction('openGitView', '${feature.id}')" title="Open Git View">
+				<button class="header-action-btn" onclick="quickAction('openGitView', '${feature.id}')" title="Open Workspace">
 					${ICON_GIT}
 				</button>
 				<button class="header-action-btn" onclick="quickAction('openFolder', '${feature.id}')" title="Open Folder">
@@ -1254,7 +1254,7 @@ export class HomePanel {
 					${ICON_PR} Create PR
 				</button>
 				<button class="quick-action-btn" onclick="quickAction('openGitView', '${feature.id}')">
-					${ICON_GIT} Git Diff
+					${ICON_GIT} Open Workspace
 				</button>
 				<button class="quick-action-btn" onclick="quickAction('syncNames', '${feature.id}')">
 					${ICON_SYNC} Sync Names
@@ -1267,7 +1267,7 @@ export class HomePanel {
 		return `
 		<div class="feature-actions-section">
 			<button class="quick-action-btn" onclick="quickAction('openGitView', '${feature.id}')">
-				${ICON_GIT} Open Git View
+				${ICON_GIT} Open Workspace
 			</button>
 			<button class="quick-action-btn" onclick="quickAction('openFolder', '${feature.id}')">
 				${ICON_FOLDER} Open Folder

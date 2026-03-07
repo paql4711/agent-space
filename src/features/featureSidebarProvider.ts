@@ -451,7 +451,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			<div class="feature-quick-actions">
 				<button class="action-btn" onclick="addAgent(event, '${feature.id}')" title="Add Agent">${ICON_ADD_AGENT}</button>
 				<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
-				<button class="action-btn" onclick="openGitView(event, '${feature.id}')" title="Open Git View">${ICON_GIT}</button>
+				<button class="action-btn" onclick="openGitView(event, '${feature.id}')" title="Open Workspace">${ICON_GIT}</button>
 			</div>
 		</div>`;
 	}

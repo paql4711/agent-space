@@ -106,7 +106,7 @@
 			},
 			{
 				"command": "agentSpace.openFeatureGitView",
-				"title": "Open Git View",
+				"title": "Open Workspace",
 				"category": "Agent Space",
 				"icon": "$(source-control)"
 			},
@@ -132,7 +132,7 @@
 			},
 			{
 				"command": "agentSpace.openWorkspace",
-				"title": "Open Workspace",
+				"title": "Open Feature Home",
 				"category": "Agent Space",
 				"icon": "$(window)"
 			},

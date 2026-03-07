@@ -23,7 +23,7 @@ Custom compatibility: any terminal-based CLI can be added with `agentSpace.codin
 2. Create a feature to provision a branch and worktree.
 3. Launch one or more coding CLIs for that feature.
 4. Run package scripts like dev servers or watchers, or open an interactive worktree terminal, alongside the agents.
-5. Resume work later from the Agent Space sidebar or home view, then open a pull request when ready.
+5. Resume work later from the Agent Space sidebar or home view, open the feature workspace when needed, then open a pull request when ready.
 
 ## Why It Is Useful
 
@@ -76,6 +76,10 @@ Launch package scripts such as dev servers and watch tasks, or open an interacti
 
 Push the feature branch and open the GitHub Pull Requests extension flow from inside VS Code.
 
+### Workspace Handoff
+
+Open the feature worktree in a new VS Code window directly from Agent Space.
+
 ## Commands
 
 All commands are available from the Command Palette.
@@ -86,6 +90,8 @@ All commands are available from the Command Palette.
 | `Agent Space: Add Agent` | Add another coding agent to the active feature |
 | `Agent Space: Add Service` | Start an interactive terminal or run a package script in a managed terminal |
 | `Agent Space: Create Pull Request` | Push the branch and open PR creation |
+| `Agent Space: Open Workspace` | Open the feature worktree in a new VS Code window and focus Source Control |
+| `Agent Space: Open Feature Home` | Open the feature home view in the current window |
 | `Agent Space: Delete Feature` | Remove the feature, worktree, and agent data |
 | `Agent Space: Open in File Explorer` | Open the feature worktree in a new VS Code window |
 | `Agent Space: Add Project` | Register a Git repository |
