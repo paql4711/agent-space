@@ -283,7 +283,7 @@ button {
 	position: relative;
 	padding: 6px 10px 6px 14px; /* Left padding for color bar */
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	cursor: pointer;
 	border-left: 1px solid transparent;
 }
@@ -320,6 +320,10 @@ button {
 	background-color: var(--vscode-debugIcon-stopForeground);
 }
 
+.status-dot.errored {
+	background-color: var(--vscode-errorForeground);
+}
+
 .status-dot.done {
 	background-color: var(--vscode-disabledForeground);
 	opacity: 0.5;
@@ -340,18 +344,33 @@ button {
 	}
 }
 
+.agent-copy {
+	flex: 1;
+	min-width: 0;
+}
+
 .agent-name {
 	flex: 1;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	font-size: 0.95em;
+	display: block;
 }
 
 .agent-tool {
 	color: var(--vscode-descriptionForeground);
 	font-size: 0.9em;
 	margin-left: 4px;
+}
+
+.agent-error-note {
+	margin-top: 2px;
+	font-size: 0.8em;
+	color: var(--vscode-errorForeground);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* Done/Disabled Agents */
@@ -391,6 +410,14 @@ button {
 
 .agent-card.done {
 	opacity: 0.7;
+}
+
+.agent-card.errored {
+	background: color-mix(
+		in srgb,
+		var(--vscode-errorForeground) 10%,
+		transparent
+	);
 }
 
 .agent-card.done:hover {

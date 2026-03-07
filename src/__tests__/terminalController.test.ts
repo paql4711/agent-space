@@ -73,25 +73,44 @@ describe("TerminalController", () => {
 		createdAt: "2026-03-06T00:00:00Z",
 	};
 
-	const updateAgentStatus = vi.fn();
+	const markAgentStarted = vi.fn();
+	const recordAgentFailure = vi.fn();
 	const notifyChange = vi.fn();
 	const findContextByFeatureId = vi.fn();
 	const adoptSession = vi.fn();
 	const createCommand = vi.fn();
 	const configureSession = vi.fn();
 	const isSessionAlive = vi.fn();
+	const getPaneStatus = vi.fn();
 	const resolveAgentTool = vi.fn();
 	const buildLaunchCommand = vi.fn();
 	const buildResumeLaunchCommand = vi.fn();
+	let closedTerminalHandler:
+		| ((terminal: {
+				show: ReturnType<typeof vi.fn>;
+				dispose: ReturnType<typeof vi.fn>;
+		  }) => void)
+		| undefined;
+	let terminalInstance: {
+		show: ReturnType<typeof vi.fn>;
+		dispose: ReturnType<typeof vi.fn>;
+	};
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		onDidCloseTerminalMock.mockImplementation(((
+			callback: typeof closedTerminalHandler,
+		) => {
+			closedTerminalHandler = callback;
+			return { dispose: vi.fn() };
+		}) as never);
 		findContextByFeatureId.mockReturnValue({
-			agentManager: { updateAgentStatus },
+			agentManager: { markAgentStarted, recordAgentFailure },
 		});
 		adoptSession.mockReturnValue(false);
 		createCommand.mockReturnValue('tmux new-session -d -s "session" "claude"');
 		isSessionAlive.mockReturnValue(true);
+		getPaneStatus.mockReturnValue(null);
 		resolveAgentTool.mockReturnValue({
 			id: "claude",
 			name: "Claude Code",
@@ -99,7 +118,8 @@ describe("TerminalController", () => {
 		});
 		buildLaunchCommand.mockReturnValue("claude");
 		buildResumeLaunchCommand.mockReturnValue("claude --resume session-1");
-		createTerminalMock.mockReturnValue({ show: vi.fn(), dispose: vi.fn() });
+		terminalInstance = { show: vi.fn(), dispose: vi.fn() };
+		createTerminalMock.mockReturnValue(terminalInstance);
 		showErrorMessageMock.mockResolvedValue(undefined);
 	});
 
@@ -113,6 +133,7 @@ describe("TerminalController", () => {
 				createCommand,
 				configureSession,
 				isSessionAlive,
+				getPaneStatus,
 			} as never,
 			{
 				resolveAgentTool,
@@ -129,8 +150,14 @@ describe("TerminalController", () => {
 
 		expect(terminal).toBeUndefined();
 		expect(createTerminalMock).not.toHaveBeenCalled();
-		expect(updateAgentStatus).not.toHaveBeenCalled();
-		expect(notifyChange).not.toHaveBeenCalled();
+		expect(markAgentStarted).not.toHaveBeenCalled();
+		expect(recordAgentFailure).toHaveBeenCalledWith(
+			"a1",
+			"f1",
+			"Failed to start Agent 1 with Claude Code. Check that the CLI is installed and launches from /repo/feature-one.",
+			undefined,
+		);
+		expect(notifyChange).toHaveBeenCalledTimes(1);
 		expect(showErrorMessageMock).toHaveBeenCalledWith(
 			"Failed to start Agent 1 with Claude Code. Check that the CLI is installed and launches from /repo/feature-one.",
 		);
@@ -146,6 +173,7 @@ describe("TerminalController", () => {
 				createCommand,
 				configureSession,
 				isSessionAlive: vi.fn().mockReturnValue(false),
+				getPaneStatus,
 			} as never,
 			{
 				resolveAgentTool,
@@ -160,8 +188,101 @@ describe("TerminalController", () => {
 
 		expect(terminal).toBeUndefined();
 		expect(createTerminalMock).not.toHaveBeenCalled();
-		expect(updateAgentStatus).not.toHaveBeenCalled();
-		expect(notifyChange).not.toHaveBeenCalled();
+		expect(markAgentStarted).not.toHaveBeenCalled();
+		expect(recordAgentFailure).toHaveBeenCalledTimes(1);
+		expect(notifyChange).toHaveBeenCalledTimes(1);
+	});
+
+	it("launches a fresh agent with the normal command even when resume was requested", () => {
+		const controller = new TerminalController(
+			{ findContextByFeatureId, notifyChange } as never,
+			{
+				sessionName: vi.fn().mockReturnValue("agent-space-f1-a1"),
+				legacySessionName: vi.fn().mockReturnValue("companion-f1-a1"),
+				adoptSession,
+				createCommand,
+				configureSession,
+				isSessionAlive,
+				getPaneStatus,
+			} as never,
+			{
+				resolveAgentTool,
+				buildLaunchCommand,
+				buildResumeLaunchCommand,
+			} as never,
+		);
+
+		vi.mocked(exec).mockReturnValue("");
+
+		controller.createTerminal(
+			feature,
+			{ ...agent, hasStarted: false },
+			0,
+			true,
+		);
+
+		expect(buildLaunchCommand).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "claude" }),
+			"session-1",
+		);
+		expect(buildResumeLaunchCommand).not.toHaveBeenCalled();
+		expect(markAgentStarted).toHaveBeenCalledWith("a1", "f1");
+		expect(notifyChange).toHaveBeenCalledTimes(1);
+	});
+
+	it("records and surfaces unexpected agent exits after the terminal closes", () => {
+		const sessionAliveMock = vi
+			.fn()
+			.mockReturnValueOnce(true)
+			.mockReturnValue(false);
+		const controller = new TerminalController(
+			{ findContextByFeatureId, notifyChange } as never,
+			{
+				sessionName: vi.fn().mockReturnValue("agent-space-f1-a1"),
+				legacySessionName: vi.fn().mockReturnValue("companion-f1-a1"),
+				adoptSession,
+				createCommand,
+				configureSession,
+				isSessionAlive: sessionAliveMock,
+				getPaneStatus,
+			} as never,
+			{
+				resolveAgentTool,
+				buildLaunchCommand,
+				buildResumeLaunchCommand,
+			} as never,
+		);
+
+		findContextByFeatureId.mockReturnValue({
+			agentManager: {
+				markAgentStarted,
+				recordAgentFailure,
+				getAgents: vi.fn().mockReturnValue([{ ...agent, status: "running" }]),
+			},
+		});
+		getPaneStatus.mockReturnValue({ dead: true, exitCode: 17 });
+		vi.mocked(exec).mockReturnValue("");
+
+		const terminal = controller.createTerminal(
+			feature,
+			{ ...agent, hasStarted: true },
+			0,
+		);
+		expect(terminal).toBe(terminalInstance);
+		expect(closedTerminalHandler).toBeDefined();
+
+		closedTerminalHandler?.(terminalInstance);
+
+		expect(recordAgentFailure).toHaveBeenLastCalledWith(
+			"a1",
+			"f1",
+			"Agent 1 exited unexpectedly (exit code 17).",
+			17,
+		);
+		expect(showErrorMessageMock).toHaveBeenLastCalledWith(
+			"Agent 1 exited unexpectedly (exit code 17).",
+		);
+		expect(notifyChange).toHaveBeenCalledTimes(2);
 	});
 
 	it("starts shell services without an inner command", () => {
@@ -176,6 +297,7 @@ describe("TerminalController", () => {
 				isSessionAlive: vi.fn().mockReturnValue(false),
 				createShellCommand,
 				configureServiceSession,
+				getPaneStatus,
 			} as never,
 			{
 				resolveAgentTool,
@@ -184,11 +306,13 @@ describe("TerminalController", () => {
 			} as never,
 		);
 
-		controller.createServiceTerminal(feature, shellService, "/repo/feature-one");
-
-		expect(createShellCommand).toHaveBeenCalledWith(
-			"agent-space-svc-f1-svc1",
+		controller.createServiceTerminal(
+			feature,
+			shellService,
+			"/repo/feature-one",
 		);
+
+		expect(createShellCommand).toHaveBeenCalledWith("agent-space-svc-f1-svc1");
 		expect(vi.mocked(exec)).toHaveBeenCalledWith(
 			'tmux new-session -d -s "agent-space-svc-f1-svc1"',
 			{ cwd: "/repo/feature-one" },

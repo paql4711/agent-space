@@ -1,5 +1,5 @@
 export type FeatureStatus = "active" | "done";
-export type AgentStatus = "running" | "idle" | "stopped" | "done";
+export type AgentStatus = "running" | "idle" | "stopped" | "done" | "errored";
 export type IsolationMode = "shared" | "per-agent";
 
 export interface Feature {
@@ -29,6 +29,9 @@ export interface Agent {
 	tmuxSession?: string;
 	toolId?: string;
 	status: AgentStatus;
+	hasStarted?: boolean;
+	lastError?: string;
+	lastExitCode?: number | null;
 	createdAt: string;
 }
 
