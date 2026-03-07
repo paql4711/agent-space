@@ -2,8 +2,10 @@
 .gitignore
 .env
 .vscode/**
+.worktrees/**
 src/**
 scripts/**
+feature/**
 sidebar-preview.png
 biome.json
 bun.lock
