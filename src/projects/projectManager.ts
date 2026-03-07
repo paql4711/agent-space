@@ -7,6 +7,7 @@ import { ServiceManager } from "../services/serviceManager";
 import type { GlobalStore } from "../storage/globalStore";
 import { Store } from "../storage/store";
 import type { Project } from "../types";
+import type { TerminalController } from "../agents/terminalController";
 
 export interface ProjectContext {
 	project: Project;
@@ -179,8 +180,48 @@ export class ProjectManager {
 			store,
 			project.repoPath,
 			worktreeBase,
+			this.tmux,
 		);
 		const serviceManager = new ServiceManager(store, this.tmux);
 		return { project, store, featureManager, agentManager, serviceManager };
+	}
+
+	killProjectSessions(
+		projectId: string,
+		terminalController?: Pick<TerminalController, "killFeatureTerminals">,
+	): void {
+		const ctx = this.getContext(projectId);
+		if (!ctx) return;
+
+		for (const feature of ctx.featureManager.getFeatures()) {
+			if (terminalController) {
+				terminalController.killFeatureTerminals(feature.id);
+				continue;
+			}
+
+			for (const agent of ctx.agentManager.getAgents(feature.id)) {
+				this.tmux.killSession(
+					agent.tmuxSession ?? this.tmux.sessionName(feature.id, agent.id),
+				);
+				this.tmux.killSession(
+					this.tmux.legacySessionName(feature.id, agent.id),
+				);
+			}
+
+			for (const service of ctx.serviceManager.getServices(feature.id)) {
+				this.tmux.killSession(service.tmuxSession);
+			}
+		}
+	}
+
+	deleteProjectFeatureData(projectId: string): void {
+		const ctx = this.getContext(projectId);
+		if (!ctx) return;
+
+		for (const feature of [...ctx.featureManager.getFeatures()]) {
+			ctx.serviceManager.deleteAllServices(feature.id);
+			ctx.agentManager.deleteAllAgents(feature.id);
+			ctx.featureManager.deleteFeature(feature.id);
+		}
 	}
 }

@@ -228,6 +228,24 @@ export class HomePanel {
 					message.serviceId as string,
 				);
 				break;
+			case "killAgentSession":
+				this.handleKillAgentSession(
+					message.featureId as string,
+					message.agentId as string,
+				);
+				break;
+			case "killServiceSession":
+				this.handleKillServiceSession(
+					message.featureId as string,
+					message.serviceId as string,
+				);
+				break;
+			case "killFeatureSessions":
+				this.handleKillFeatureSessions(message.featureId as string);
+				break;
+			case "killProjectSessions":
+				this.handleKillProjectSessions(message.projectId as string);
+				break;
 			// Service actions
 			case "addService":
 				run("agentSpace.addService", message.featureId);
@@ -290,6 +308,12 @@ export class HomePanel {
 	private handleStopService(featureId: string, serviceId: string): void {
 		const ctx = this.projectManager.findContextByFeatureId(featureId);
 		if (!ctx) return;
+		const service = ctx.serviceManager
+			.getServices(featureId)
+			.find((candidate) => candidate.id === serviceId);
+		if (service && this.terminalController) {
+			this.terminalController.killServiceTerminal(service.id, service.tmuxSession);
+		}
 		ctx.serviceManager.stopService(serviceId, featureId);
 		this.projectManager.notifyChange();
 	}
@@ -342,6 +366,56 @@ export class HomePanel {
 			service,
 			feature.worktreePath,
 		);
+	}
+
+	private handleKillAgentSession(featureId: string, agentId: string): void {
+		const ctx = this.projectManager.findContextByFeatureId(featureId);
+		if (!ctx) return;
+		this.terminalController?.killAgentTerminal(agentId, featureId);
+		ctx.agentManager.closeAgent(agentId, featureId);
+		this.projectManager.notifyChange();
+	}
+
+	private handleKillServiceSession(featureId: string, serviceId: string): void {
+		const ctx = this.projectManager.findContextByFeatureId(featureId);
+		if (!ctx) return;
+		const service = ctx.serviceManager
+			.getServices(featureId)
+			.find((candidate) => candidate.id === serviceId);
+		if (!service) return;
+		this.terminalController?.killServiceTerminal(service.id, service.tmuxSession);
+		ctx.serviceManager.stopService(serviceId, featureId);
+		this.projectManager.notifyChange();
+	}
+
+	private handleKillFeatureSessions(featureId: string): void {
+		const ctx = this.projectManager.findContextByFeatureId(featureId);
+		if (!ctx) return;
+
+		this.terminalController?.killFeatureTerminals(featureId);
+		for (const agent of ctx.agentManager.getAgents(featureId)) {
+			ctx.agentManager.closeAgent(agent.id, featureId);
+		}
+		for (const service of ctx.serviceManager.getServices(featureId)) {
+			ctx.serviceManager.stopService(service.id, featureId);
+		}
+		this.projectManager.notifyChange();
+	}
+
+	private handleKillProjectSessions(projectId: string): void {
+		const ctx = this.projectManager.getContext(projectId);
+		if (!ctx) return;
+
+		this.projectManager.killProjectSessions(projectId, this.terminalController);
+		for (const feature of ctx.featureManager.getFeatures()) {
+			for (const agent of ctx.agentManager.getAgents(feature.id)) {
+				ctx.agentManager.closeAgent(agent.id, feature.id);
+			}
+			for (const service of ctx.serviceManager.getServices(feature.id)) {
+				ctx.serviceManager.stopService(service.id, feature.id);
+			}
+		}
+		this.projectManager.notifyChange();
 	}
 
 	// -- Activity polling -----------------------------------------
@@ -620,6 +694,7 @@ export class HomePanel {
 					</thead>
 					<tbody>${projectRows}</tbody>
 				</table>
+				${this.renderWelcomeTmuxSection(contexts)}
 			</div>`;
 		}
 
@@ -684,6 +759,7 @@ export class HomePanel {
 			${this.renderProgressSection(progressPct, doneCount, totalAgents)}
 			${this.renderAgentsSection(activeAgents, doneAgents, agents, feature)}
 			${this.renderServicesSection(services, feature)}
+			${this.renderFeatureTmuxSection(feature, agents, services)}
 			${this.renderGitStatsSection(feature)}
 			${this.renderQuickActions(feature)}
 			${this.renderFeatureActions(feature)}
@@ -876,6 +952,148 @@ export class HomePanel {
 					</div>
 				</div>
 			</div>
+		</div>`;
+	}
+
+	private renderWelcomeTmuxSection(
+		contexts: ReturnType<ProjectManager["getAllContexts"]>,
+	): string {
+		const projectSections = contexts
+			.map((ctx) => {
+				const featureSections = ctx.featureManager
+					.getFeatures()
+					.map((feature) =>
+						this.renderTmuxFeatureGroup(
+							feature,
+							ctx.agentManager.getAgents(feature.id),
+							ctx.serviceManager.getServices(feature.id),
+							ctx.project.id,
+						),
+					)
+					.join("");
+				if (!featureSections) return "";
+
+				return `
+				<div class="tmux-project-card">
+					<div class="tmux-project-header">
+						<div>
+							<div class="tmux-project-name">${this.escapeHtml(ctx.project.name)}</div>
+							<div class="tmux-project-path">${this.escapeHtml(ctx.project.repoPath)}</div>
+						</div>
+						<button class="quick-action-btn danger subtle" onclick="killProjectSessions('${ctx.project.id}')">Kill Project Sessions</button>
+					</div>
+					<div class="tmux-feature-groups">
+						${featureSections}
+					</div>
+				</div>`;
+			})
+			.filter(Boolean)
+			.join("");
+
+		return `
+		<div>
+			<div class="section-label">Tmux Sessions</div>
+			${
+				projectSections ||
+				'<div class="tmux-empty-state">No managed tmux sessions yet.</div>'
+			}
+		</div>`;
+	}
+
+	private renderFeatureTmuxSection(
+		feature: Feature,
+		agents: Agent[],
+		services: Service[],
+	): string {
+		return `
+		<div>
+			<div class="section-label">Tmux Sessions</div>
+			${this.renderTmuxFeatureGroup(feature, agents, services)}
+		</div>`;
+	}
+
+	private renderTmuxFeatureGroup(
+		feature: Feature,
+		agents: Agent[],
+		services: Service[],
+		projectId?: string,
+	): string {
+		const sessionRows = [
+			...agents.map((agent) =>
+				this.renderTmuxAgentSessionRow(feature.id, agent),
+			),
+			...services.map((service) =>
+				this.renderTmuxServiceSessionRow(feature.id, service),
+			),
+		].join("");
+
+		const sessionCount = agents.length + services.length;
+
+		return `
+		<div class="tmux-feature-card">
+			<div class="tmux-feature-header">
+				<div>
+					<div class="tmux-feature-name">${this.escapeHtml(feature.name)}</div>
+					<div class="tmux-feature-branch">${this.escapeHtml(feature.branch)}</div>
+				</div>
+				<div class="tmux-feature-actions">
+					<span class="tmux-count-badge">${sessionCount} session${sessionCount === 1 ? "" : "s"}</span>
+					<button class="quick-action-btn danger subtle" onclick="killFeatureSessions('${feature.id}')">Kill Feature Sessions</button>
+					${
+						projectId
+							? `<button class="quick-action-btn subtle" onclick="resumeFeature('${feature.id}')">Open</button>`
+							: ""
+					}
+				</div>
+			</div>
+			<div class="tmux-session-list">
+				${
+					sessionRows ||
+					'<div class="tmux-empty-state">No managed tmux sessions for this feature.</div>'
+				}
+			</div>
+		</div>`;
+	}
+
+	private renderTmuxAgentSessionRow(featureId: string, agent: Agent): string {
+		const sessionName = agent.tmuxSession ?? this.tmux.sessionName(featureId, agent.id);
+		const alive = this.tmux.isSessionAlive(sessionName);
+		return `
+		<div class="tmux-session-row">
+			<div class="tmux-session-main">
+				<div class="tmux-session-title">
+					<span class="tmux-session-type">Agent</span>
+					<span>${this.escapeHtml(agent.name)}</span>
+					<span class="tmux-live-pill ${alive ? "live" : "dead"}">${alive ? "Live" : "Dead"}</span>
+				</div>
+				<div class="tmux-session-meta">
+					<span>${this.escapeHtml(sessionName)}</span>
+					<span>${this.escapeHtml(agent.status)}</span>
+				</div>
+			</div>
+			<button class="quick-action-btn danger subtle" onclick="killAgentSession('${featureId}', '${agent.id}')">Kill</button>
+		</div>`;
+	}
+
+	private renderTmuxServiceSessionRow(
+		featureId: string,
+		service: Service,
+	): string {
+		const alive = this.tmux.isSessionAlive(service.tmuxSession);
+		return `
+		<div class="tmux-session-row">
+			<div class="tmux-session-main">
+				<div class="tmux-session-title">
+					<span class="tmux-session-type">Script</span>
+					<span>${this.escapeHtml(service.name)}</span>
+					<span class="tmux-live-pill ${alive ? "live" : "dead"}">${alive ? "Live" : "Dead"}</span>
+				</div>
+				<div class="tmux-session-meta">
+					<span>${this.escapeHtml(service.tmuxSession)}</span>
+					<span>${this.escapeHtml(service.status)}</span>
+				</div>
+			</div>
+			<button class="quick-action-btn danger subtle" onclick="killServiceSession('${featureId}', '${service.id}')">Kill</button>
 		</div>`;
 	}
 

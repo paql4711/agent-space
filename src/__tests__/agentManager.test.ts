@@ -18,6 +18,11 @@ describe("AgentManager", () => {
 	let tmpDir: string;
 	let store: Store;
 	let manager: AgentManager;
+	let tmux: {
+		sessionName: ReturnType<typeof vi.fn>;
+		legacySessionName: ReturnType<typeof vi.fn>;
+		adoptSession: ReturnType<typeof vi.fn>;
+	};
 
 	const feature: Feature = {
 		id: "f1",
@@ -33,7 +38,21 @@ describe("AgentManager", () => {
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "am-test-"));
 		store = new Store(tmpDir);
-		manager = new AgentManager(store, tmpDir, path.join(tmpDir, ".worktrees"));
+		tmux = {
+			sessionName: vi.fn((featureId: string, agentId: string) => {
+				return `agent-space-${featureId}-${agentId}`;
+			}),
+			legacySessionName: vi.fn((featureId: string, agentId: string) => {
+				return `companion-${featureId}-${agentId}`;
+			}),
+			adoptSession: vi.fn(() => false),
+		};
+		manager = new AgentManager(
+			store,
+			tmpDir,
+			path.join(tmpDir, ".worktrees"),
+			tmux as never,
+		);
 		mockExecSync.mockReset();
 	});
 
@@ -68,6 +87,14 @@ describe("AgentManager", () => {
 			expect(agents[0].toolId).toBe("copilot");
 		});
 
+		it("persists canonical tmux session for new agents", () => {
+			const agent = manager.createAgent(feature, "copilot");
+			expect(agent.tmuxSession).toBe(`agent-space-f1-${agent.id}`);
+			expect(store.loadAgents("f1")[0]?.tmuxSession).toBe(
+				`agent-space-f1-${agent.id}`,
+			);
+		});
+
 		it("leaves toolId undefined when not provided", () => {
 			const agent = manager.createAgent(feature);
 			expect(agent.toolId).toBeUndefined();
@@ -83,6 +110,46 @@ describe("AgentManager", () => {
 
 		it("returns empty for unknown feature", () => {
 			expect(manager.getAgents("unknown")).toEqual([]);
+		});
+
+		it("normalizes missing tmuxSession to the canonical name", () => {
+			store.saveAgents("f1", [
+				{
+					id: "a1",
+					featureId: "f1",
+					name: "Agent 1",
+					sessionId: null,
+					status: "stopped",
+					createdAt: "2026-03-04T00:00:00Z",
+				},
+			]);
+
+			expect(manager.getAgents("f1")[0]?.tmuxSession).toBe("agent-space-f1-a1");
+			expect(tmux.adoptSession).toHaveBeenCalledWith(
+				"agent-space-f1-a1",
+				"companion-f1-a1",
+			);
+			expect(store.loadAgents("f1")[0]?.tmuxSession).toBe("agent-space-f1-a1");
+		});
+
+		it("normalizes legacy stored tmuxSession to the canonical name", () => {
+			store.saveAgents("f1", [
+				{
+					id: "a1",
+					featureId: "f1",
+					name: "Agent 1",
+					sessionId: null,
+					tmuxSession: "companion-f1-a1",
+					status: "stopped",
+					createdAt: "2026-03-04T00:00:00Z",
+				},
+			]);
+
+			expect(manager.getAgents("f1")[0]?.tmuxSession).toBe("agent-space-f1-a1");
+			expect(tmux.adoptSession).toHaveBeenCalledWith(
+				"agent-space-f1-a1",
+				"companion-f1-a1",
+			);
 		});
 	});
 

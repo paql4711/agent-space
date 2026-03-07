@@ -185,6 +185,26 @@ describe("TmuxIntegration", () => {
 		});
 	});
 
+	describe("listSessions", () => {
+		it("returns tmux session names", () => {
+			mockExec.mockReturnValue("agent-space-f1-a1\nagent-space-svc-f1-s1\n");
+			expect(tmux.listSessions()).toEqual([
+				"agent-space-f1-a1",
+				"agent-space-svc-f1-s1",
+			]);
+			expect(mockExec).toHaveBeenCalledWith(
+				'tmux list-sessions -F "#{session_name}"',
+			);
+		});
+
+		it("returns empty array when tmux list fails", () => {
+			mockExec.mockImplementation(() => {
+				throw new Error("tmux unavailable");
+			});
+			expect(tmux.listSessions()).toEqual([]);
+		});
+	});
+
 	// -------------------------------------------------------------------
 	// killSession
 	// -------------------------------------------------------------------
@@ -236,11 +256,22 @@ describe("TmuxIntegration", () => {
 
 	describe("adoptSession", () => {
 		it("returns true when the preferred session already exists", () => {
-			mockExecSilent.mockReturnValue(true);
+			mockExecSilent.mockReturnValueOnce(true).mockReturnValueOnce(false);
 			expect(tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1")).toBe(
 				true,
 			);
 			expect(mockExec).not.toHaveBeenCalled();
+		});
+
+		it("kills the duplicate current session when both names exist", () => {
+			mockExecSilent.mockReturnValue(true);
+			mockExec.mockReturnValue("");
+			expect(tmux.adoptSession("agent-space-f1-a1", "companion-f1-a1")).toBe(
+				true,
+			);
+			expect(mockExec).toHaveBeenCalledWith(
+				'tmux kill-session -t "companion-f1-a1"',
+			);
 		});
 
 		it("renames the current session when only the legacy session exists", () => {
