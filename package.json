@@ -94,7 +94,7 @@
 			},
 			{
 				"command": "agentSpace.addService",
-				"title": "Execute Script",
+				"title": "Add Service",
 				"category": "Agent Space",
 				"icon": "$(server-process)"
 			},

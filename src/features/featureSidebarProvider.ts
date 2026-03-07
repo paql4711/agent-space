@@ -419,8 +419,8 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 
 			servicesHtml = `
 		<div class="services-section">
-			<div class="section-header"><span class="section-label">Scripts</span></div>
-			<div class="service-list">${activeServiceCards || '<div class="empty-placeholder">No running scripts</div>'}</div>
+			<div class="section-header"><span class="section-label">Services</span></div>
+			<div class="service-list">${activeServiceCards || '<div class="empty-placeholder">No running services</div>'}</div>
 			${stoppedServicesHtml}
 		</div>`;
 		}
@@ -436,7 +436,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			${servicesHtml}
 			<div class="feature-quick-actions">
 				<button class="action-btn" onclick="addAgent(event, '${feature.id}')" title="Add Agent">${ICON_ADD_AGENT}</button>
-				<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Execute Script">${ICON_ADD_SERVICE}</button>
+				<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
 			</div>
 		</div>`;
 	}

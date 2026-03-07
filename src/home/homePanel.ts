@@ -730,9 +730,12 @@ export class HomePanel {
 			vscode.Uri.joinPath(this.extensionUri, "media", "webview", "home.js"),
 		);
 
-		const activeAgents = agents.filter((a) => a.status !== "done");
+		const activeAgents = agents.filter(
+			(a) => a.status !== "done" && a.status !== "stopped",
+		);
 		const doneAgents = agents.filter((a) => a.status === "done");
-		const totalAgents = agents.length;
+		const stoppedAgents = agents.filter((a) => a.status === "stopped");
+		const totalAgents = activeAgents.length + doneAgents.length;
 		const doneCount = doneAgents.length;
 		const progressPct =
 			totalAgents > 0 ? Math.round((doneCount / totalAgents) * 100) : 0;
@@ -757,7 +760,13 @@ export class HomePanel {
 		</div>
 		<div class="workspace-content">
 			${this.renderProgressSection(progressPct, doneCount, totalAgents)}
-			${this.renderAgentsSection(activeAgents, doneAgents, agents, feature)}
+			${this.renderAgentsSection(
+				activeAgents,
+				doneAgents,
+				stoppedAgents,
+				agents,
+				feature,
+			)}
 			${this.renderServicesSection(services, feature)}
 			${this.renderFeatureTmuxSection(feature, agents, services)}
 			${this.renderGitStatsSection(feature)}
@@ -801,6 +810,7 @@ export class HomePanel {
 	private renderAgentsSection(
 		active: Agent[],
 		done: Agent[],
+		stopped: Agent[],
 		all: Agent[],
 		feature: Feature,
 	): string {
@@ -822,10 +832,25 @@ export class HomePanel {
 		const donePanels = done
 			.map((a) => this.renderAgentPanel(a, all, feature))
 			.join("");
+		const stoppedPanels = stopped
+			.map((a) => this.renderAgentPanel(a, all, feature))
+			.join("");
+
+		let stoppedSection = "";
+		if (stopped.length > 0) {
+			stoppedSection = `
+			<div class="stopped-services-header collapsed" onclick="toggleStoppedServicesHome(this)">
+				<span class="stopped-services-chevron">&rsaquo;</span>
+				<span>${stopped.length} stopped</span>
+			</div>
+			<div class="stopped-services-list collapsed">
+				${stoppedPanels}
+			</div>`;
+		}
 
 		return `
 		<div>
-			<div class="section-label">Agents &middot; ${all.length}</div>
+			<div class="section-label">Agents${active.length > 0 ? ` &middot; ${active.length}` : ""}</div>
 			<div class="agent-grid">
 				${activePanels}
 				${donePanels}
@@ -833,6 +858,7 @@ export class HomePanel {
 					${ICON_PLUS} Add Agent
 				</div>
 			</div>
+			${stoppedSection}
 		</div>`;
 	}
 
@@ -897,7 +923,7 @@ export class HomePanel {
 
 		const ghostCard = `
 			<div class="ghost-card" onclick="quickAction('addService', '${feature.id}')">
-				${ICON_PLUS} Execute Script
+				${ICON_PLUS} Add Service
 			</div>`;
 
 		let stoppedSection = "";
@@ -914,7 +940,7 @@ export class HomePanel {
 
 		return `
 		<div>
-			<div class="section-label">Scripts${services.length > 0 ? ` &middot; ${services.length}` : ""}</div>
+			<div class="section-label">Services${activeServices.length > 0 ? ` &middot; ${activeServices.length}` : ""}</div>
 			<div class="services-grid">
 				${activePanels}
 				${ghostCard}
@@ -962,14 +988,15 @@ export class HomePanel {
 			.map((ctx) => {
 				const featureSections = ctx.featureManager
 					.getFeatures()
-					.map((feature) =>
-						this.renderTmuxFeatureGroup(
+					.map((feature) => {
+						return this.renderTmuxFeatureGroup(
 							feature,
 							ctx.agentManager.getAgents(feature.id),
 							ctx.serviceManager.getServices(feature.id),
 							ctx.project.id,
-						),
-					)
+						);
+					})
+					.filter(Boolean)
 					.join("");
 				if (!featureSections) return "";
 
@@ -1005,10 +1032,14 @@ export class HomePanel {
 		agents: Agent[],
 		services: Service[],
 	): string {
+		const featureGroup = this.renderTmuxFeatureGroup(feature, agents, services);
 		return `
 		<div>
 			<div class="section-label">Tmux Sessions</div>
-			${this.renderTmuxFeatureGroup(feature, agents, services)}
+			${
+				featureGroup ??
+				'<div class="tmux-empty-state">No managed tmux sessions for this feature.</div>'
+			}
 		</div>`;
 	}
 
@@ -1017,17 +1048,27 @@ export class HomePanel {
 		agents: Agent[],
 		services: Service[],
 		projectId?: string,
-	): string {
-		const sessionRows = [
-			...agents.map((agent) =>
-				this.renderTmuxAgentSessionRow(feature.id, agent),
-			),
-			...services.map((service) =>
-				this.renderTmuxServiceSessionRow(feature.id, service),
-			),
-		].join("");
+	): string | null {
+		const { liveRows, inactiveRows } = this.getTmuxSessionRows(
+			feature.id,
+			agents,
+			services,
+		);
+		if (liveRows.length === 0 && inactiveRows.length === 0) {
+			return null;
+		}
 
-		const sessionCount = agents.length + services.length;
+		let inactiveSection = "";
+		if (inactiveRows.length > 0) {
+			inactiveSection = `
+			<div class="stopped-services-header collapsed tmux-inactive-header" onclick="toggleStoppedServicesHome(this)">
+				<span class="stopped-services-chevron">&rsaquo;</span>
+				<span>${inactiveRows.length} stopped</span>
+			</div>
+			<div class="stopped-services-list collapsed tmux-inactive-list">
+				${inactiveRows.join("")}
+			</div>`;
+		}
 
 		return `
 		<div class="tmux-feature-card">
@@ -1037,7 +1078,7 @@ export class HomePanel {
 					<div class="tmux-feature-branch">${this.escapeHtml(feature.branch)}</div>
 				</div>
 				<div class="tmux-feature-actions">
-					<span class="tmux-count-badge">${sessionCount} session${sessionCount === 1 ? "" : "s"}</span>
+					<span class="tmux-count-badge">${liveRows.length} session${liveRows.length === 1 ? "" : "s"}</span>
 					<button class="quick-action-btn danger subtle" onclick="killFeatureSessions('${feature.id}')">Kill Feature Sessions</button>
 					${
 						projectId
@@ -1047,53 +1088,97 @@ export class HomePanel {
 				</div>
 			</div>
 			<div class="tmux-session-list">
-				${
-					sessionRows ||
-					'<div class="tmux-empty-state">No managed tmux sessions for this feature.</div>'
-				}
+				${liveRows.length > 0 ? liveRows.join("") : '<div class="tmux-empty-state">No live tmux sessions for this feature.</div>'}
 			</div>
+			${inactiveSection}
 		</div>`;
 	}
 
-	private renderTmuxAgentSessionRow(featureId: string, agent: Agent): string {
-		const sessionName = agent.tmuxSession ?? this.tmux.sessionName(featureId, agent.id);
-		const alive = this.tmux.isSessionAlive(sessionName);
+	private getTmuxSessionRows(
+		featureId: string,
+		agents: Agent[],
+		services: Service[],
+	): { liveRows: string[]; inactiveRows: string[] } {
+		const liveRows: string[] = [];
+		const inactiveRows: string[] = [];
+
+		for (const agent of agents) {
+			const sessionName =
+				agent.tmuxSession ?? this.tmux.sessionName(featureId, agent.id);
+			if (this.tmux.isSessionAlive(sessionName)) {
+				liveRows.push(
+					this.renderTmuxAgentSessionRow(featureId, agent, sessionName, true),
+				);
+			} else {
+				inactiveRows.push(
+					this.renderTmuxAgentSessionRow(featureId, agent, sessionName, false),
+				);
+			}
+		}
+
+		for (const service of services) {
+			if (this.tmux.isSessionAlive(service.tmuxSession)) {
+				liveRows.push(this.renderTmuxServiceSessionRow(featureId, service, true));
+			} else {
+				inactiveRows.push(
+					this.renderTmuxServiceSessionRow(featureId, service, false),
+				);
+			}
+		}
+
+		return { liveRows, inactiveRows };
+	}
+
+	private renderTmuxAgentSessionRow(
+		featureId: string,
+		agent: Agent,
+		sessionName?: string,
+		alive = true,
+	): string {
+		const resolvedSessionName =
+			sessionName ?? this.tmux.sessionName(featureId, agent.id);
+		const actionButton = alive
+			? `<button class="quick-action-btn danger subtle" onclick="killAgentSession('${featureId}', '${agent.id}')">Kill</button>`
+			: "";
 		return `
 		<div class="tmux-session-row">
 			<div class="tmux-session-main">
 				<div class="tmux-session-title">
 					<span class="tmux-session-type">Agent</span>
 					<span>${this.escapeHtml(agent.name)}</span>
-					<span class="tmux-live-pill ${alive ? "live" : "dead"}">${alive ? "Live" : "Dead"}</span>
+					<span class="tmux-live-pill ${alive ? "live" : "dead"}">${alive ? "Live" : "Stopped"}</span>
 				</div>
 				<div class="tmux-session-meta">
-					<span>${this.escapeHtml(sessionName)}</span>
+					<span>${this.escapeHtml(resolvedSessionName)}</span>
 					<span>${this.escapeHtml(agent.status)}</span>
 				</div>
 			</div>
-			<button class="quick-action-btn danger subtle" onclick="killAgentSession('${featureId}', '${agent.id}')">Kill</button>
+			${actionButton}
 		</div>`;
 	}
 
 	private renderTmuxServiceSessionRow(
 		featureId: string,
 		service: Service,
+		alive = true,
 	): string {
-		const alive = this.tmux.isSessionAlive(service.tmuxSession);
+		const actionButton = alive
+			? `<button class="quick-action-btn danger subtle" onclick="killServiceSession('${featureId}', '${service.id}')">Kill</button>`
+			: "";
 		return `
 		<div class="tmux-session-row">
 			<div class="tmux-session-main">
 				<div class="tmux-session-title">
 					<span class="tmux-session-type">Script</span>
 					<span>${this.escapeHtml(service.name)}</span>
-					<span class="tmux-live-pill ${alive ? "live" : "dead"}">${alive ? "Live" : "Dead"}</span>
+					<span class="tmux-live-pill ${alive ? "live" : "dead"}">${alive ? "Live" : "Stopped"}</span>
 				</div>
 				<div class="tmux-session-meta">
 					<span>${this.escapeHtml(service.tmuxSession)}</span>
 					<span>${this.escapeHtml(service.status)}</span>
 				</div>
 			</div>
-			<button class="quick-action-btn danger subtle" onclick="killServiceSession('${featureId}', '${service.id}')">Kill</button>
+			${actionButton}
 		</div>`;
 	}
 
@@ -1121,7 +1206,7 @@ export class HomePanel {
 					${ICON_PLUS} Add Agent
 				</button>
 				<button class="quick-action-btn" onclick="quickAction('addService', '${feature.id}')">
-					${ICON_SERVER} Execute Script
+					${ICON_SERVER} Add Service
 				</button>
 				<button class="quick-action-btn" onclick="quickAction('createPR', '${feature.id}')">
 					${ICON_PR} Create PR

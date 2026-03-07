@@ -64,6 +64,7 @@ describe("Service types", () => {
 			featureId: "f1",
 			name: "dev",
 			command: "npm run dev",
+			launchCommand: "npm run dev",
 			tmuxSession: "agent-space-svc-f1-s1",
 			status: "running",
 			createdAt: "2026-03-05T00:00:00Z",

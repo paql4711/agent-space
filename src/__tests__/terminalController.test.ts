@@ -37,7 +37,7 @@ vi.mock("vscode", () => ({
 }));
 
 import { TerminalController } from "../agents/terminalController";
-import type { Agent, Feature } from "../types";
+import type { Agent, Feature, Service } from "../types";
 import { exec } from "../utils/platform";
 
 describe("TerminalController", () => {
@@ -59,6 +59,17 @@ describe("TerminalController", () => {
 		sessionId: "session-1",
 		toolId: "claude",
 		status: "stopped",
+		createdAt: "2026-03-06T00:00:00Z",
+	};
+
+	const shellService: Service = {
+		id: "svc1",
+		featureId: "f1",
+		name: "Terminal",
+		command: "Interactive shell",
+		launchCommand: null,
+		tmuxSession: "agent-space-svc-f1-svc1",
+		status: "running",
 		createdAt: "2026-03-06T00:00:00Z",
 	};
 
@@ -151,5 +162,40 @@ describe("TerminalController", () => {
 		expect(createTerminalMock).not.toHaveBeenCalled();
 		expect(updateAgentStatus).not.toHaveBeenCalled();
 		expect(notifyChange).not.toHaveBeenCalled();
+	});
+
+	it("starts shell services without an inner command", () => {
+		const createShellCommand = vi
+			.fn()
+			.mockReturnValue('tmux new-session -d -s "agent-space-svc-f1-svc1"');
+		const configureServiceSession = vi.fn();
+
+		const controller = new TerminalController(
+			{ findContextByFeatureId, notifyChange } as never,
+			{
+				isSessionAlive: vi.fn().mockReturnValue(false),
+				createShellCommand,
+				configureServiceSession,
+			} as never,
+			{
+				resolveAgentTool,
+				buildLaunchCommand,
+				buildResumeLaunchCommand,
+			} as never,
+		);
+
+		controller.createServiceTerminal(feature, shellService, "/repo/feature-one");
+
+		expect(createShellCommand).toHaveBeenCalledWith(
+			"agent-space-svc-f1-svc1",
+		);
+		expect(vi.mocked(exec)).toHaveBeenCalledWith(
+			'tmux new-session -d -s "agent-space-svc-f1-svc1"',
+			{ cwd: "/repo/feature-one" },
+		);
+		expect(configureServiceSession).toHaveBeenCalledWith(
+			"agent-space-svc-f1-svc1",
+		);
+		expect(createTerminalMock).toHaveBeenCalled();
 	});
 });
