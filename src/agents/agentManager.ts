@@ -60,6 +60,7 @@ export class AgentManager {
 			worktreePath,
 			toolId,
 			status: "stopped",
+			hasStarted: false,
 			createdAt: new Date().toISOString(),
 		};
 
@@ -88,6 +89,32 @@ export class AgentManager {
 		this.saveAgents(featureId, agents);
 	}
 
+	markAgentStarted(agentId: string, featureId: string): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent) return;
+		agent.status = "running";
+		agent.hasStarted = true;
+		delete agent.lastError;
+		delete agent.lastExitCode;
+		this.saveAgents(featureId, agents);
+	}
+
+	recordAgentFailure(
+		agentId: string,
+		featureId: string,
+		message: string,
+		exitCode?: number | null,
+	): void {
+		const agents = this.loadAgents(featureId);
+		const agent = agents.find((a) => a.id === agentId);
+		if (!agent) return;
+		agent.status = "errored";
+		agent.lastError = message;
+		agent.lastExitCode = exitCode ?? null;
+		this.saveAgents(featureId, agents);
+	}
+
 	updateAgentSessionId(
 		agentId: string,
 		featureId: string,
@@ -105,6 +132,8 @@ export class AgentManager {
 		const agent = agents.find((a) => a.id === agentId);
 		if (!agent) return;
 		agent.status = "done";
+		delete agent.lastError;
+		delete agent.lastExitCode;
 		this.saveAgents(featureId, agents);
 	}
 
@@ -144,6 +173,8 @@ export class AgentManager {
 		}
 
 		agent.status = "stopped";
+		delete agent.lastError;
+		delete agent.lastExitCode;
 		this.saveAgents(feature.id, agents);
 		return agent;
 	}

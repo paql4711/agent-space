@@ -66,6 +66,7 @@ describe("AgentManager", () => {
 			expect(agent.featureId).toBe("f1");
 			expect(agent.name).toBe("Agent 1");
 			expect(agent.status).toBe("stopped");
+			expect(agent.hasStarted).toBe(false);
 		});
 
 		it("persists agent to storage", () => {
@@ -190,6 +191,36 @@ describe("AgentManager", () => {
 		});
 	});
 
+	describe("markAgentStarted", () => {
+		it("marks the agent running and clears stored failure state", () => {
+			const agent = manager.createAgent(feature);
+			manager.recordAgentFailure(agent.id, "f1", "boom", 7);
+
+			manager.markAgentStarted(agent.id, "f1");
+
+			expect(manager.getAgents("f1")[0]).toMatchObject({
+				status: "running",
+				hasStarted: true,
+			});
+			expect(manager.getAgents("f1")[0].lastError).toBeUndefined();
+			expect(manager.getAgents("f1")[0].lastExitCode).toBeUndefined();
+		});
+	});
+
+	describe("recordAgentFailure", () => {
+		it("persists a failure state and message", () => {
+			const agent = manager.createAgent(feature);
+
+			manager.recordAgentFailure(agent.id, "f1", "Agent crashed", 23);
+
+			expect(manager.getAgents("f1")[0]).toMatchObject({
+				status: "errored",
+				lastError: "Agent crashed",
+				lastExitCode: 23,
+			});
+		});
+	});
+
 	describe("deleteAgent", () => {
 		it("removes agent", () => {
 			const agent = manager.createAgent(feature);
@@ -210,8 +241,11 @@ describe("AgentManager", () => {
 	describe("closeAgent", () => {
 		it("marks agent status as done", () => {
 			const agent = manager.createAgent(feature);
+			manager.recordAgentFailure(agent.id, "f1", "boom", 9);
 			manager.closeAgent(agent.id, "f1");
 			expect(manager.getAgents("f1")[0].status).toBe("done");
+			expect(manager.getAgents("f1")[0].lastError).toBeUndefined();
+			expect(manager.getAgents("f1")[0].lastExitCode).toBeUndefined();
 		});
 
 		it("persists done status to storage", () => {
@@ -230,6 +264,7 @@ describe("AgentManager", () => {
 			const agent = manager.createAgent(perAgentFeature);
 			mockExecSync.mockReset();
 
+			manager.recordAgentFailure(agent.id, "f1", "boom", 11);
 			manager.closeAgent(agent.id, "f1");
 
 			expect(mockExecSync).not.toHaveBeenCalled();

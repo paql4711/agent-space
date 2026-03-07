@@ -137,7 +137,10 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			.getServices(featureId)
 			.find((candidate) => candidate.id === serviceId);
 		if (service && this.terminalController) {
-			this.terminalController.killServiceTerminal(service.id, service.tmuxSession);
+			this.terminalController.killServiceTerminal(
+				service.id,
+				service.tmuxSession,
+			);
 		}
 		ctx.serviceManager.stopService(serviceId, featureId);
 		this.projectManager.notifyChange();
@@ -329,6 +332,10 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			if (a.status === "running") statusClass = "running";
 			if (a.status === "stopped") statusClass = "stopped";
 			if (a.status === "done") statusClass = "done";
+			if (a.status === "errored") statusClass = "errored";
+			const errorNote = a.lastError
+				? `<div class="agent-error-note" title="${this.escapeHtml(a.lastError)}">${this.escapeHtml(a.lastError)}</div>`
+				: "";
 
 			return `
 		<div class="agent-card ${statusClass}"
@@ -336,7 +343,10 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			oncontextmenu="showAgentMenu(event, '${feature.id}', '${a.id}')">
             <div class="agent-color-bar" style="background-color: ${agentColor}"></div>
             <div class="status-dot ${statusClass}"></div>
-			<span class="agent-name" title="${this.escapeHtml(a.name)}">${this.escapeHtml(a.name)}<span class="agent-tool">${toolLabel}</span></span>
+			<div class="agent-copy">
+				<span class="agent-name" title="${this.escapeHtml(a.name)}">${this.escapeHtml(a.name)}<span class="agent-tool">${toolLabel}</span></span>
+				${errorNote}
+			</div>
 		</div>`;
 		};
 

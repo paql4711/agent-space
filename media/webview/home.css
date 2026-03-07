@@ -337,11 +337,19 @@ body {
 	font-weight: 600;
 }
 .tmux-live-pill.live {
-	background: color-mix(in srgb, var(--vscode-testing-iconPassed) 18%, transparent);
+	background: color-mix(
+		in srgb,
+		var(--vscode-testing-iconPassed) 18%,
+		transparent
+	);
 	color: var(--vscode-testing-iconPassed);
 }
 .tmux-live-pill.dead {
-	background: color-mix(in srgb, var(--vscode-descriptionForeground) 20%, transparent);
+	background: color-mix(
+		in srgb,
+		var(--vscode-descriptionForeground) 20%,
+		transparent
+	);
 	color: var(--vscode-descriptionForeground);
 }
 .tmux-empty-state {
@@ -561,6 +569,9 @@ body {
 	background: var(--vscode-descriptionForeground);
 	opacity: 0.5;
 }
+.agent-status-dot.errored {
+	background: var(--vscode-errorForeground);
+}
 .agent-status-dot.done {
 	background: var(--vscode-descriptionForeground);
 	opacity: 0.3;
@@ -591,6 +602,13 @@ body {
 	text-decoration: line-through;
 	opacity: 0.5;
 }
+.agent-panel.errored {
+	border-color: color-mix(
+		in srgb,
+		var(--vscode-errorForeground) 45%,
+		var(--vscode-panel-border)
+	);
+}
 .agent-tool-badge {
 	font-size: 10px;
 	color: var(--vscode-descriptionForeground);
@@ -598,6 +616,14 @@ body {
 	padding: 1px 6px;
 	border-radius: 3px;
 	flex-shrink: 0;
+}
+.agent-error-badge {
+	background: color-mix(
+		in srgb,
+		var(--vscode-errorForeground) 18%,
+		transparent
+	);
+	color: var(--vscode-errorForeground);
 }
 .agent-panel-chevron {
 	font-size: 10px;

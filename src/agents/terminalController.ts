@@ -8,8 +8,16 @@ import type { TmuxIntegration } from "./tmux";
 
 const AGENT_COLORS = getThemeColors();
 
+interface TerminalMetadata {
+	id: string;
+	kind: "agent" | "service";
+	featureId?: string;
+	sessionName: string;
+}
+
 export class TerminalController implements vscode.Disposable {
 	private terminals = new Map<string, vscode.Terminal>();
+	private terminalMetadata = new Map<vscode.Terminal, TerminalMetadata>();
 	private disposables: vscode.Disposable[] = [];
 
 	constructor(
@@ -19,11 +27,16 @@ export class TerminalController implements vscode.Disposable {
 	) {
 		this.disposables.push(
 			vscode.window.onDidCloseTerminal((terminal) => {
-				for (const [agentId, t] of this.terminals) {
-					if (t === terminal) {
-						this.terminals.delete(agentId);
-						break;
-					}
+				const metadata = this.terminalMetadata.get(terminal);
+				if (!metadata) {
+					return;
+				}
+
+				this.terminalMetadata.delete(terminal);
+				this.terminals.delete(metadata.id);
+
+				if (metadata.kind === "agent" && metadata.featureId) {
+					this.handleUnexpectedAgentClose(metadata);
 				}
 			}),
 		);
@@ -45,9 +58,10 @@ export class TerminalController implements vscode.Disposable {
 		let sessionReady = this.tmux.adoptSession(sessionName, legacySessionName);
 
 		if (!sessionReady) {
+			const tool = this.toolRegistry.resolveAgentTool(agent.toolId);
+			const shouldResume = resume && agent.hasStarted === true;
 			try {
-				const tool = this.toolRegistry.resolveAgentTool(agent.toolId);
-				const launchCommand = resume
+				const launchCommand = shouldResume
 					? this.toolRegistry.buildResumeLaunchCommand(tool, agent.sessionId)
 					: this.toolRegistry.buildLaunchCommand(tool, agent.sessionId);
 				exec(this.tmux.createCommand(sessionName, launchCommand), { cwd });
@@ -61,9 +75,13 @@ export class TerminalController implements vscode.Disposable {
 
 		if (!sessionReady) {
 			const tool = this.toolRegistry.resolveAgentTool(agent.toolId);
-			void vscode.window.showErrorMessage(
-				`Failed to start ${agent.name} with ${tool.name}. Check that the CLI is installed and launches from ${cwd}.`,
+			const message = this.buildStartupFailureMessage(
+				agent.name,
+				tool.name,
+				cwd,
 			);
+			this.recordAgentFailure(feature.id, agent.id, message);
+			void vscode.window.showErrorMessage(message);
 			return undefined;
 		}
 
@@ -81,10 +99,16 @@ export class TerminalController implements vscode.Disposable {
 		});
 
 		this.terminals.set(agent.id, terminal);
+		this.terminalMetadata.set(terminal, {
+			id: agent.id,
+			kind: "agent",
+			featureId: feature.id,
+			sessionName,
+		});
 
 		const ctx = this.projectManager.findContextByFeatureId(feature.id);
 		if (ctx) {
-			ctx.agentManager.updateAgentStatus(agent.id, feature.id, "running");
+			ctx.agentManager.markAgentStarted(agent.id, feature.id);
 			this.projectManager.notifyChange();
 		}
 
@@ -149,6 +173,12 @@ export class TerminalController implements vscode.Disposable {
 		});
 
 		this.terminals.set(service.id, terminal);
+		this.terminalMetadata.set(terminal, {
+			id: service.id,
+			kind: "service",
+			featureId: service.featureId,
+			sessionName,
+		});
 		return terminal;
 	}
 
@@ -179,8 +209,9 @@ export class TerminalController implements vscode.Disposable {
 		if (!existing) return;
 
 		// Dispose old terminal (detaches from tmux, session stays alive)
-		existing.dispose();
+		this.terminalMetadata.delete(existing);
 		this.terminals.delete(agent.id);
+		existing.dispose();
 
 		// Re-attach with updated name
 		const name = `[${feature.name}] ${agent.name}`;
@@ -205,6 +236,12 @@ export class TerminalController implements vscode.Disposable {
 		});
 
 		this.terminals.set(agent.id, terminal);
+		this.terminalMetadata.set(terminal, {
+			id: agent.id,
+			kind: "agent",
+			featureId: feature.id,
+			sessionName,
+		});
 	}
 
 	disposeFeatureTerminals(featureId: string): void {
@@ -213,11 +250,7 @@ export class TerminalController implements vscode.Disposable {
 
 		const agents = ctx.agentManager.getAgents(featureId);
 		for (const agent of agents) {
-			const terminal = this.terminals.get(agent.id);
-			if (terminal) {
-				terminal.dispose();
-				this.terminals.delete(agent.id);
-			}
+			this.disposeTrackedTerminal(agent.id);
 		}
 
 		this.disposeFeatureServiceTerminals(featureId);
@@ -229,20 +262,12 @@ export class TerminalController implements vscode.Disposable {
 
 		const services = ctx.serviceManager.getServices(featureId);
 		for (const service of services) {
-			const terminal = this.terminals.get(service.id);
-			if (terminal) {
-				terminal.dispose();
-				this.terminals.delete(service.id);
-			}
+			this.disposeTrackedTerminal(service.id);
 		}
 	}
 
 	killAgentTerminal(agentId: string, featureId: string): void {
-		const terminal = this.terminals.get(agentId);
-		if (terminal) {
-			terminal.dispose();
-			this.terminals.delete(agentId);
-		}
+		this.disposeTrackedTerminal(agentId);
 
 		const sessionName = this.resolveAgentSessionName(featureId, agentId);
 		this.tmux.killSession(sessionName);
@@ -265,11 +290,7 @@ export class TerminalController implements vscode.Disposable {
 	}
 
 	killServiceTerminal(serviceId: string, tmuxSession: string): void {
-		const terminal = this.terminals.get(serviceId);
-		if (terminal) {
-			terminal.dispose();
-			this.terminals.delete(serviceId);
-		}
+		this.disposeTrackedTerminal(serviceId);
 		this.tmux.killSession(tmuxSession);
 	}
 
@@ -323,5 +344,76 @@ export class TerminalController implements vscode.Disposable {
 			.getAgents(featureId)
 			.find((candidate) => candidate.id === agentId);
 		return agent?.tmuxSession ?? this.tmux.sessionName(featureId, agentId);
+	}
+
+	private disposeTrackedTerminal(entityId: string): void {
+		const terminal = this.terminals.get(entityId);
+		if (!terminal) {
+			return;
+		}
+
+		this.terminals.delete(entityId);
+		this.terminalMetadata.delete(terminal);
+		terminal.dispose();
+	}
+
+	private buildStartupFailureMessage(
+		agentName: string,
+		toolName: string,
+		cwd: string,
+	): string {
+		return `Failed to start ${agentName} with ${toolName}. Check that the CLI is installed and launches from ${cwd}.`;
+	}
+
+	private recordAgentFailure(
+		featureId: string,
+		agentId: string,
+		message: string,
+		exitCode?: number | null,
+	): void {
+		const ctx = this.projectManager.findContextByFeatureId(featureId);
+		if (!ctx) {
+			return;
+		}
+
+		ctx.agentManager.recordAgentFailure(agentId, featureId, message, exitCode);
+		this.projectManager.notifyChange();
+	}
+
+	private handleUnexpectedAgentClose(metadata: TerminalMetadata): void {
+		if (!metadata.featureId) {
+			return;
+		}
+
+		const ctx = this.projectManager.findContextByFeatureId(metadata.featureId);
+		if (!ctx) {
+			return;
+		}
+
+		const agent = ctx.agentManager
+			.getAgents(metadata.featureId)
+			.find((candidate) => candidate.id === metadata.id);
+		if (!agent || agent.status === "done") {
+			return;
+		}
+
+		const paneStatus = this.tmux.getPaneStatus(metadata.sessionName);
+		const sessionAlive = this.tmux.isSessionAlive(metadata.sessionName);
+		if (sessionAlive && !paneStatus?.dead) {
+			return;
+		}
+
+		const exitSuffix =
+			paneStatus?.dead && Number.isFinite(paneStatus.exitCode)
+				? ` (exit code ${paneStatus.exitCode})`
+				: "";
+		const message = `${agent.name} exited unexpectedly${exitSuffix}.`;
+		this.recordAgentFailure(
+			metadata.featureId,
+			metadata.id,
+			message,
+			paneStatus?.dead ? paneStatus.exitCode : undefined,
+		);
+		void vscode.window.showErrorMessage(message);
 	}
 }

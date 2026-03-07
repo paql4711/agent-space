@@ -171,8 +171,17 @@ export async function activate(
 				);
 				return;
 			}
-			const agent = ctx.agentManager.createAgent(feature, initialTool.id);
-			terminalController.createTerminal(feature, agent, 0);
+			try {
+				const agent = ctx.agentManager.createAgent(feature, initialTool.id);
+				terminalController.createTerminal(feature, agent, 0);
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : "Failed to create agent";
+				vscode.window.showErrorMessage(
+					`Create agent failed for ${feature.branch}: ${message}`,
+				);
+				return;
+			}
 		} else {
 			terminalController.reconnectTmuxSessions(feature);
 		}
@@ -425,12 +434,18 @@ export async function activate(
 				);
 				if (!toolPick) return;
 
-				const agents = ctx.agentManager.getAgents(featureId);
-				const agent = ctx.agentManager.createAgent(feature, toolPick.toolId);
-				terminalController.createTerminal(feature, agent, agents.length);
-				sidebarProvider.refresh();
-				const home = HomePanel.getInstance();
-				if (home) home.refresh();
+				try {
+					const agents = ctx.agentManager.getAgents(featureId);
+					const agent = ctx.agentManager.createAgent(feature, toolPick.toolId);
+					terminalController.createTerminal(feature, agent, agents.length);
+					sidebarProvider.refresh();
+					const home = HomePanel.getInstance();
+					if (home) home.refresh();
+				} catch (err) {
+					const message =
+						err instanceof Error ? err.message : "Failed to create agent";
+					vscode.window.showErrorMessage(`Add agent failed: ${message}`);
+				}
 			},
 		),
 	);
@@ -550,7 +565,12 @@ export async function activate(
 				if (!feature) return;
 
 				const agent = ctx.agentManager.reopenAgent(agentIdArg, feature);
-				if (!agent) return;
+				if (!agent) {
+					vscode.window.showErrorMessage(
+						"Failed to reopen agent. Check that its worktree and branch are still available.",
+					);
+					return;
+				}
 
 				const agents = ctx.agentManager.getAgents(featureIdArg);
 				const agentIndex = agents.findIndex((a) => a.id === agentIdArg);

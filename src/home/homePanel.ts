@@ -312,7 +312,10 @@ export class HomePanel {
 			.getServices(featureId)
 			.find((candidate) => candidate.id === serviceId);
 		if (service && this.terminalController) {
-			this.terminalController.killServiceTerminal(service.id, service.tmuxSession);
+			this.terminalController.killServiceTerminal(
+				service.id,
+				service.tmuxSession,
+			);
 		}
 		ctx.serviceManager.stopService(serviceId, featureId);
 		this.projectManager.notifyChange();
@@ -383,7 +386,10 @@ export class HomePanel {
 			.getServices(featureId)
 			.find((candidate) => candidate.id === serviceId);
 		if (!service) return;
-		this.terminalController?.killServiceTerminal(service.id, service.tmuxSession);
+		this.terminalController?.killServiceTerminal(
+			service.id,
+			service.tmuxSession,
+		);
 		ctx.serviceManager.stopService(serviceId, featureId);
 		this.projectManager.notifyChange();
 	}
@@ -429,7 +435,9 @@ export class HomePanel {
 		const agent = agents.find((a) => a.id === agentId);
 		if (!agent) return;
 
-		const sessionName = this.tmux.sessionName(this.currentFeatureId, agentId);
+		const sessionName =
+			agent.tmuxSession ??
+			this.tmux.sessionName(this.currentFeatureId, agentId);
 		const content = this.tmux.capturePane(sessionName, 80);
 		this.panel.webview.postMessage({
 			type: "activityUpdate",
@@ -448,7 +456,9 @@ export class HomePanel {
 		for (const agentId of agentIds) {
 			const agent = agents.find((a) => a.id === agentId);
 			if (!agent) continue;
-			const sessionName = this.tmux.sessionName(this.currentFeatureId, agentId);
+			const sessionName =
+				agent.tmuxSession ??
+				this.tmux.sessionName(this.currentFeatureId, agentId);
 			const content = this.tmux.capturePane(sessionName, 80);
 			this.panel.webview.postMessage({
 				type: "activityUpdate",
@@ -731,11 +741,13 @@ export class HomePanel {
 		);
 
 		const activeAgents = agents.filter(
-			(a) => a.status !== "done" && a.status !== "stopped",
+			(a) => a.status === "running" || a.status === "idle",
 		);
+		const erroredAgents = agents.filter((a) => a.status === "errored");
 		const doneAgents = agents.filter((a) => a.status === "done");
 		const stoppedAgents = agents.filter((a) => a.status === "stopped");
-		const totalAgents = activeAgents.length + doneAgents.length;
+		const totalAgents =
+			activeAgents.length + erroredAgents.length + doneAgents.length;
 		const doneCount = doneAgents.length;
 		const progressPct =
 			totalAgents > 0 ? Math.round((doneCount / totalAgents) * 100) : 0;
@@ -762,6 +774,7 @@ export class HomePanel {
 			${this.renderProgressSection(progressPct, doneCount, totalAgents)}
 			${this.renderAgentsSection(
 				activeAgents,
+				erroredAgents,
 				doneAgents,
 				stoppedAgents,
 				agents,
@@ -809,6 +822,7 @@ export class HomePanel {
 
 	private renderAgentsSection(
 		active: Agent[],
+		errored: Agent[],
 		done: Agent[],
 		stopped: Agent[],
 		all: Agent[],
@@ -826,7 +840,12 @@ export class HomePanel {
 			</div>`;
 		}
 
+		const visibleCount = active.length + errored.length;
+
 		const activePanels = active
+			.map((a) => this.renderAgentPanel(a, all, feature))
+			.join("");
+		const erroredPanels = errored
 			.map((a) => this.renderAgentPanel(a, all, feature))
 			.join("");
 		const donePanels = done
@@ -850,9 +869,10 @@ export class HomePanel {
 
 		return `
 		<div>
-			<div class="section-label">Agents${active.length > 0 ? ` &middot; ${active.length}` : ""}</div>
+			<div class="section-label">Agents${visibleCount > 0 ? ` &middot; ${visibleCount}` : ""}</div>
 			<div class="agent-grid">
 				${activePanels}
+				${erroredPanels}
 				${donePanels}
 				<div class="ghost-card" onclick="quickAction('addAgent', '${feature.id}')">
 					${ICON_PLUS} Add Agent
@@ -876,24 +896,37 @@ export class HomePanel {
 				? `<span class="agent-tool-badge">${this.escapeHtml(tool.name)}</span>`
 				: "";
 		const isDone = agent.status === "done";
+		const isErrored = agent.status === "errored";
 		const nameClass = isDone ? "agent-panel-name done" : "agent-panel-name";
+		const errorBadge = isErrored
+			? `<span class="agent-tool-badge agent-error-badge" title="${this.escapeHtml(agent.lastError ?? "Agent failed unexpectedly")}">Failed</span>`
+			: "";
+		const emptyState = isDone
+			? "Agent finished &mdash; no live activity"
+			: isErrored
+				? this.escapeHtml(
+						agent.lastError ?? "Agent failed to start or exited unexpectedly.",
+					)
+				: "Click to view live terminal output";
 
 		let actionButtons: string;
 		if (isDone) {
 			actionButtons = `
 				<button class="agent-action-btn" onclick="event.stopPropagation(); reopenAgent('${feature.id}', '${agent.id}')" title="Reopen">&#8635;</button>`;
 		} else {
+			const focusTitle = isErrored ? "Retry Agent" : "Focus Terminal";
 			actionButtons = `
-				<button class="agent-action-btn" onclick="event.stopPropagation(); focusAgent('${feature.id}', '${agent.id}')" title="Focus Terminal">&#9243;</button>
+				<button class="agent-action-btn" onclick="event.stopPropagation(); focusAgent('${feature.id}', '${agent.id}')" title="${focusTitle}">&#9243;</button>
 				<button class="agent-action-btn" onclick="event.stopPropagation(); markAgentDone('${feature.id}', '${agent.id}', '${this.escapeHtml(agent.name)}')" title="Mark Done">&#10003;</button>`;
 		}
 
 		return `
-		<div class="agent-panel" style="border-left: 2px solid ${color}">
+		<div class="agent-panel ${isErrored ? "errored" : ""}" style="border-left: 2px solid ${color}">
 			<div class="agent-panel-header" id="agent-header-${agent.id}" onclick="toggleAgent('${agent.id}')">
 				<div class="agent-status-dot ${agent.status}"></div>
 				<span class="${nameClass}" title="${this.escapeHtml(agent.name)}">${this.escapeHtml(agent.name)}</span>
 				${toolBadge}
+				${errorBadge}
 				<div class="agent-panel-actions">
 					${actionButtons}
 				</div>
@@ -903,7 +936,7 @@ export class HomePanel {
 				<div class="activity-content">
 					<pre class="activity-pre" id="activity-pre-${agent.id}" style="display: none"></pre>
 					<div class="activity-empty" id="activity-empty-${agent.id}">
-						${isDone ? "Agent finished &mdash; no live activity" : "Click to view live terminal output"}
+						${emptyState}
 					</div>
 				</div>
 			</div>
@@ -1118,7 +1151,9 @@ export class HomePanel {
 
 		for (const service of services) {
 			if (this.tmux.isSessionAlive(service.tmuxSession)) {
-				liveRows.push(this.renderTmuxServiceSessionRow(featureId, service, true));
+				liveRows.push(
+					this.renderTmuxServiceSessionRow(featureId, service, true),
+				);
 			} else {
 				inactiveRows.push(
 					this.renderTmuxServiceSessionRow(featureId, service, false),
