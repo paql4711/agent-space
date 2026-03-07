@@ -456,28 +456,39 @@ export async function activate(
 
 				const { detectScripts } = await import("./services/scriptDetector");
 				const scripts = detectScripts(feature.worktreePath);
-
-				if (scripts.length === 0) {
-					vscode.window.showWarningMessage(
-						"No scripts found in package.json for this feature's worktree.",
-					);
-					return;
-				}
-
-				const pick = await vscode.window.showQuickPick(
-					scripts.map((s) => ({
+				const picks: Array<{
+					label: string;
+					description: string;
+					serviceName: string;
+					serviceCommand: string;
+					launchCommand: string | null;
+				}> = [
+					{
+						label: "$(terminal) Open Terminal",
+						description: "Start an interactive shell in this worktree",
+						serviceName: "Terminal",
+						serviceCommand: "Interactive shell",
+						launchCommand: null,
+					},
+					...scripts.map((s) => ({
 						label: s.name,
 						description: s.command,
+						serviceName: s.name,
+						serviceCommand: s.command,
+						launchCommand: s.command,
 					})),
-					{ placeHolder: "Select a script to execute" },
-				);
+				];
+
+				const pick = await vscode.window.showQuickPick(picks, {
+					placeHolder: "Start a service in this worktree",
+				});
 				if (!pick) return;
 
 				const service = ctx.serviceManager.createService(
 					featureId,
-					pick.label,
-					// biome-ignore lint/style/noNonNullAssertion: description is always set from s.command above
-					pick.description!,
+					pick.serviceName,
+					pick.serviceCommand,
+					pick.launchCommand,
 				);
 				terminalController.createServiceTerminal(
 					feature,

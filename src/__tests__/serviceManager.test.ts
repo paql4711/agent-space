@@ -35,8 +35,20 @@ describe("ServiceManager", () => {
 			expect(svc.featureId).toBe("f1");
 			expect(svc.name).toBe("dev");
 			expect(svc.command).toBe("npm run dev");
+			expect(svc.launchCommand).toBe("npm run dev");
 			expect(svc.status).toBe("running");
 			expect(svc.tmuxSession).toBe(`agent-space-svc-f1-${svc.id}`);
+		});
+
+		it("supports shell services without a launch command", () => {
+			const svc = manager.createService(
+				"f1",
+				"Terminal",
+				"Interactive shell",
+				null,
+			);
+			expect(svc.command).toBe("Interactive shell");
+			expect(svc.launchCommand).toBeNull();
 		});
 
 		it("persists to storage", () => {
@@ -63,6 +75,7 @@ describe("ServiceManager", () => {
 					featureId: "f1",
 					name: "dev",
 					command: "npm run dev",
+					launchCommand: "npm run dev",
 					tmuxSession: "companion-svc-f1-s1",
 					status: "running",
 					createdAt: "2026-03-05T00:00:00Z",
@@ -77,6 +90,7 @@ describe("ServiceManager", () => {
 					featureId: "f1",
 					name: "dev",
 					command: "npm run dev",
+					launchCommand: "npm run dev",
 					tmuxSession: "agent-space-svc-f1-s1",
 					status: "running",
 					createdAt: "2026-03-05T00:00:00Z",
@@ -108,8 +122,23 @@ describe("ServiceManager", () => {
 			manager.restartService(svc.id, "f1", "/repo");
 			const services = manager.getServices("f1");
 			expect(services[0].status).toBe("running");
-			expect(vi.mocked(execSync)).toHaveBeenCalledWith(
+			expect(execSync).toHaveBeenCalledWith(
 				`tmux new-session -d -s "${svc.tmuxSession}" "npm run dev"`,
+				expect.objectContaining({ cwd: "/repo" }),
+			);
+		});
+
+		it("restarts a shell service with a plain tmux session", () => {
+			const svc = manager.createService(
+				"f1",
+				"Terminal",
+				"Interactive shell",
+				null,
+			);
+			manager.stopService(svc.id, "f1");
+			manager.restartService(svc.id, "f1", "/repo");
+			expect(execSync).toHaveBeenCalledWith(
+				`tmux new-session -d -s "${svc.tmuxSession}"`,
 				expect.objectContaining({ cwd: "/repo" }),
 			);
 		});

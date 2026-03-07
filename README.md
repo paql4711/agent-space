@@ -2,7 +2,7 @@
 
 Run any terminal-based coding CLI per feature inside VS Code with isolated Git worktrees and persistent tmux-backed sessions.
 
-Agent Space helps you manage parallel feature work without losing context. Create a feature, launch one or more coding agents, keep related scripts running, and come back later with the sidebar and home dashboard showing exactly where everything stands.
+Agent Space helps you manage parallel feature work without losing context. Create a feature, launch one or more coding agents, keep related services running, and come back later with the sidebar and home dashboard showing exactly where everything stands.
 
 It works with any coding CLI you can launch from a terminal. Built-in presets are included for `claude`, `codex`, `copilot`, and `opencode`, and you can register custom tools for anything else.
 
@@ -11,7 +11,7 @@ It works with any coding CLI you can launch from a terminal. Built-in presets ar
 - Creates a dedicated Git worktree for each feature branch
 - Runs multiple coding CLIs on the same feature in parallel
 - Keeps agent terminals alive in tmux across VS Code restarts
-- Shows feature status, agents, and scripts in a sidebar and home dashboard
+- Shows feature status, agents, and services in a sidebar and home dashboard
 - Opens feature workspaces and pull request flows from inside VS Code
 
 Built-in presets: `claude`, `codex`, `copilot`, and `opencode`.
@@ -22,7 +22,7 @@ Custom compatibility: any terminal-based CLI can be added with `agentSpace.codin
 1. Add a Git repository as a project.
 2. Create a feature to provision a branch and worktree.
 3. Launch one or more coding CLIs for that feature.
-4. Run package scripts like dev servers or watchers alongside the agents.
+4. Run package scripts like dev servers or watchers, or open an interactive worktree terminal, alongside the agents.
 5. Resume work later from the Agent Space sidebar or home view, then open a pull request when ready.
 
 ## Why It Is Useful
@@ -48,7 +48,7 @@ Optional:
 3. Run `Agent Space: Add Project` and select any Git repository.
 4. On first start, choose the default coding CLI when prompted.
 5. Run `Agent Space: New Feature` to create a worktree and start the first agent with an available CLI.
-6. Add more agents or run a script from the feature actions as needed.
+6. Add more agents or start a service from the feature actions as needed.
 
 ## Core Features
 
@@ -66,11 +66,11 @@ Agent terminals live in tmux sessions, which means they can survive window reloa
 
 ### Sidebar and Home Dashboard
 
-Use the activity-bar sidebar for quick actions and the home view for a broader snapshot of active features, agents, scripts, and status.
+Use the activity-bar sidebar for quick actions and the home view for a broader snapshot of active features, agents, services, and status.
 
-### Managed Script Terminals
+### Managed Services
 
-Launch package scripts such as dev servers and watch tasks as managed terminals attached to a feature.
+Launch package scripts such as dev servers and watch tasks, or open an interactive shell, as managed terminals attached to a feature.
 
 ### Pull Request Handoff
 
@@ -84,7 +84,7 @@ All commands are available from the Command Palette.
 |---|---|
 | `Agent Space: New Feature` | Create a feature with a worktree and first agent |
 | `Agent Space: Add Agent` | Add another coding agent to the active feature |
-| `Agent Space: Execute Script` | Run a package script in a managed terminal |
+| `Agent Space: Add Service` | Start an interactive terminal or run a package script in a managed terminal |
 | `Agent Space: Create Pull Request` | Push the branch and open PR creation |
 | `Agent Space: Delete Feature` | Remove the feature, worktree, and agent data |
 | `Agent Space: Open in File Explorer` | Open the feature worktree in a new VS Code window |

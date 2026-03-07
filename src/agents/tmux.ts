@@ -71,6 +71,10 @@ export class TmuxIntegration {
 		return `tmux new-session -d -s "${sessionName}" "${innerCommand}"`;
 	}
 
+	createShellCommand(sessionName: string): string {
+		return `tmux new-session -d -s "${sessionName}"`;
+	}
+
 	attachCommand(sessionName: string): string {
 		return `tmux attach-session -t "${sessionName}"`;
 	}

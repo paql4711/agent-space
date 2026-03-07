@@ -21,7 +21,12 @@ export class ServiceManager {
 		return [...this.loadServices(featureId)];
 	}
 
-	createService(featureId: string, name: string, command: string): Service {
+	createService(
+		featureId: string,
+		name: string,
+		command: string,
+		launchCommand: string | null = command,
+	): Service {
 		const services = this.loadServices(featureId);
 		const id = crypto.randomUUID();
 		const tmuxSession = this.tmux.serviceSessionName(featureId, id);
@@ -31,6 +36,7 @@ export class ServiceManager {
 			featureId,
 			name,
 			command,
+			launchCommand,
 			tmuxSession,
 			status: "running",
 			createdAt: new Date().toISOString(),
@@ -152,9 +158,7 @@ export class ServiceManager {
 
 	private startServiceSession(service: Service, cwd: string): ServiceStatus {
 		try {
-			exec(this.tmux.createCommand(service.tmuxSession, service.command), {
-				cwd,
-			});
+			exec(this.resolveStartCommand(service), { cwd });
 			this.tmux.configureServiceSession(service.tmuxSession);
 			return this.tmux.isSessionAlive(service.tmuxSession)
 				? "running"
@@ -163,5 +167,16 @@ export class ServiceManager {
 			console.warn(`[ServiceManager] service tmux create failed: ${err}`);
 			return "errored";
 		}
+	}
+
+	private resolveStartCommand(service: Service): string {
+		if (service.launchCommand === null) {
+			return this.tmux.createShellCommand(service.tmuxSession);
+		}
+
+		return this.tmux.createCommand(
+			service.tmuxSession,
+			service.launchCommand ?? service.command,
+		);
 	}
 }

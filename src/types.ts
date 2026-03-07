@@ -53,6 +53,7 @@ export interface Service {
 	featureId: string;
 	name: string;
 	command: string;
+	launchCommand?: string | null;
 	tmuxSession: string;
 	status: ServiceStatus;
 	createdAt: string;
