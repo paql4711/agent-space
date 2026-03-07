@@ -34,7 +34,18 @@ describe("AgentWorkspaceIsolation", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		updateMock.mockResolvedValue(undefined);
-		executeCommandMock.mockResolvedValue(undefined);
+		executeCommandMock.mockImplementation((command: string) => {
+			if (command === "vscode.getEditorLayout") {
+				return Promise.resolve({
+					orientation: 0,
+					groups: [{ size: 1 }],
+				});
+			}
+			if (command === "getContextKeyValue") {
+				return Promise.resolve(false);
+			}
+			return Promise.resolve(undefined);
+		});
 		getConfigurationMock.mockReturnValue({
 			inspect: vi.fn(() => ({
 				globalValue: "multiple",
@@ -55,13 +66,27 @@ describe("AgentWorkspaceIsolation", () => {
 			vscode.ConfigurationTarget.Global,
 		);
 		expect(executeCommandMock.mock.calls).toEqual([
-			["workbench.action.maximizeEditor"],
+			["vscode.getEditorLayout"],
+			["getContextKeyValue", "panelVisible"],
 			["workbench.action.closePanel"],
+			["workbench.action.editorLayoutSingle"],
 		]);
 		expect(isolation.isActive()).toBe(true);
 	});
 
 	it("restores the tabs setting and panel state on leave", async () => {
+		executeCommandMock.mockImplementation((command: string) => {
+			if (command === "vscode.getEditorLayout") {
+				return Promise.resolve({
+					orientation: 0,
+					groups: [{ size: 1 }, { size: 1 }],
+				});
+			}
+			if (command === "getContextKeyValue") {
+				return Promise.resolve(true);
+			}
+			return Promise.resolve(undefined);
+		});
 		mockedWindow.terminals = [{}];
 		const isolation = new AgentWorkspaceIsolation();
 
@@ -73,9 +98,17 @@ describe("AgentWorkspaceIsolation", () => {
 			["showTabs", "multiple", vscode.ConfigurationTarget.Global],
 		]);
 		expect(executeCommandMock.mock.calls).toEqual([
-			["workbench.action.maximizeEditor"],
+			["vscode.getEditorLayout"],
+			["getContextKeyValue", "panelVisible"],
 			["workbench.action.closePanel"],
-			["workbench.action.maximizeEditor"],
+			["workbench.action.editorLayoutSingle"],
+			[
+				"vscode.setEditorLayout",
+				{
+					orientation: 0,
+					groups: [{ size: 1 }, { size: 1 }],
+				},
+			],
 			["workbench.action.togglePanel"],
 		]);
 		expect(isolation.isActive()).toBe(false);

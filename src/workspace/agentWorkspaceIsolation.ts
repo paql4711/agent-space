@@ -13,7 +13,8 @@ interface TabsSettingSnapshot {
 export class AgentWorkspaceIsolation {
 	private active = false;
 	private tabsSetting?: TabsSettingSnapshot;
-	private reopenPanel = false;
+	private editorLayout?: unknown;
+	private panelWasVisible = false;
 
 	public isActive(): boolean {
 		return this.active;
@@ -25,11 +26,15 @@ export class AgentWorkspaceIsolation {
 		}
 
 		this.tabsSetting = this.captureTabsSetting();
-		this.reopenPanel = vscode.window.terminals.length > 0;
+		this.editorLayout = await vscode.commands.executeCommand<unknown>(
+			"vscode.getEditorLayout",
+		);
+		this.panelWasVisible =
+			(await this.readContextKey<boolean>("panelVisible")) ?? false;
 
 		await this.updateTabsSetting("none", this.tabsSetting.target);
-		await vscode.commands.executeCommand("workbench.action.maximizeEditor");
 		await vscode.commands.executeCommand("workbench.action.closePanel");
+		await vscode.commands.executeCommand("workbench.action.editorLayoutSingle");
 
 		this.active = true;
 	}
@@ -39,20 +44,28 @@ export class AgentWorkspaceIsolation {
 			return;
 		}
 
-		if (this.tabsSetting) {
-			await this.updateTabsSetting(
-				this.tabsSetting.value,
-				this.tabsSetting.target,
-			);
+		try {
+			if (this.editorLayout !== undefined) {
+				await vscode.commands.executeCommand(
+					"vscode.setEditorLayout",
+					this.editorLayout,
+				);
+			}
+			if (this.tabsSetting) {
+				await this.updateTabsSetting(
+					this.tabsSetting.value,
+					this.tabsSetting.target,
+				);
+			}
+			if (this.panelWasVisible) {
+				await vscode.commands.executeCommand("workbench.action.togglePanel");
+			}
+		} finally {
+			this.active = false;
+			this.tabsSetting = undefined;
+			this.editorLayout = undefined;
+			this.panelWasVisible = false;
 		}
-		await vscode.commands.executeCommand("workbench.action.maximizeEditor");
-		if (this.reopenPanel) {
-			await vscode.commands.executeCommand("workbench.action.togglePanel");
-		}
-
-		this.active = false;
-		this.tabsSetting = undefined;
-		this.reopenPanel = false;
 	}
 
 	private captureTabsSetting(): TabsSettingSnapshot {
@@ -86,5 +99,13 @@ export class AgentWorkspaceIsolation {
 		await vscode.workspace
 			.getConfiguration("workbench.editor")
 			.update("showTabs", value, target);
+	}
+
+	private async readContextKey<T>(key: string): Promise<T | undefined> {
+		try {
+			return await vscode.commands.executeCommand<T>("getContextKeyValue", key);
+		} catch {
+			return undefined;
+		}
 	}
 }

@@ -112,10 +112,6 @@ export async function activate(
 		),
 	);
 
-	let sidebarVisible = false;
-	let homePanelVisible = false;
-	let homePanelActive = false;
-
 	const ensureHomePanel = () => {
 		const panel = HomePanel.createOrShow(
 			projectManager,
@@ -125,28 +121,22 @@ export async function activate(
 			globalStore,
 			terminalController,
 		);
-		panel.onViewStateChange(({ active, visible }) => {
-			homePanelActive = active;
-			homePanelVisible = visible;
-			if (active || visible) {
+		panel.onViewStateChange(({ active }) => {
+			if (active) {
 				void workspaceIsolation.enter();
 				return;
 			}
 
-			if (!sidebarVisible) {
-				if (activeFeatureId) {
-					terminalController.disposeFeatureTerminals(activeFeatureId);
-				}
-				void workspaceIsolation.leave();
+			if (activeFeatureId) {
+				terminalController.disposeFeatureTerminals(activeFeatureId);
 			}
+			void workspaceIsolation.leave();
 		});
 		return panel;
 	};
 
 	const showAgentSpace = async (featureId?: string): Promise<HomePanel> => {
 		const panel = ensureHomePanel();
-		homePanelVisible = true;
-		homePanelActive = true;
 		if (featureId) {
 			activeFeatureId = featureId;
 			panel.showFeature(featureId);
@@ -190,14 +180,7 @@ export async function activate(
 	};
 
 	sidebarProvider.onVisibilityChange((visible) => {
-		sidebarVisible = visible;
 		if (!visible) {
-			if (!homePanelVisible && !homePanelActive) {
-				if (activeFeatureId) {
-					terminalController.disposeFeatureTerminals(activeFeatureId);
-				}
-				void workspaceIsolation.leave();
-			}
 			return;
 		}
 
