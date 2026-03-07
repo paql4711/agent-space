@@ -99,6 +99,26 @@ describe("AgentManager", () => {
 			const agent = manager.createAgent(feature);
 			expect(agent.toolId).toBeUndefined();
 		});
+
+		it("normalizes spaced feature names for per-agent git paths", () => {
+			mockExecSync.mockReturnValue(Buffer.from(""));
+
+			manager.createAgent(
+				{
+					...feature,
+					name: "Auth system",
+					branch: "feat/Auth-system",
+					worktreePath: "/tmp/worktree/Auth-system",
+					isolation: "per-agent",
+				},
+				"copilot",
+			);
+
+			const command = mockExecSync.mock.calls[0]?.[0];
+			expect(command).toContain(".worktrees/Auth-system--");
+			expect(command).toContain(' -b "feat/Auth-system/agent-');
+			expect(command).toContain('"feat/Auth-system"');
+		});
 	});
 
 	describe("getAgents", () => {

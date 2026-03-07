@@ -2,10 +2,11 @@ import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { TmuxIntegration } from "./tmux";
+import { normalizeFeatureName } from "../features/featureName";
 import type { Store } from "../storage/store";
 import type { Agent, AgentStatus, Feature } from "../types";
 import { isWorktreePathSafe } from "../utils/worktreeGuard";
+import type { TmuxIntegration } from "./tmux";
 
 export class AgentManager {
 	private agentsByFeature = new Map<string, Agent[]>();
@@ -33,11 +34,8 @@ export class AgentManager {
 		let worktreePath: string | undefined;
 		if (feature.isolation === "per-agent") {
 			const shortId = id.slice(0, 8);
-			worktreePath = path.join(
-				this.worktreeBase,
-				`${feature.name}--${shortId}`,
-			);
-			const branch = `feat/${feature.name}/agent-${shortId}`;
+			worktreePath = this.agentWorktreePath(feature, shortId);
+			const branch = this.agentBranchName(feature, shortId);
 			execSync(
 				`git worktree add "${worktreePath}" -b "${branch}" "${feature.branch}"`,
 				{
@@ -119,7 +117,7 @@ export class AgentManager {
 		if (feature.isolation === "per-agent" && agent.worktreePath) {
 			if (!this.worktreeExists(agent.worktreePath)) {
 				const shortId = agent.id.slice(0, 8);
-				const branch = `feat/${feature.name}/agent-${shortId}`;
+				const branch = this.agentBranchName(feature, shortId);
 				try {
 					// Try to reuse existing branch, otherwise create new
 					try {
@@ -153,7 +151,7 @@ export class AgentManager {
 	isAgentBranchMerged(agent: Agent, feature: Feature): boolean {
 		if (!agent.worktreePath) return true;
 		const shortId = agent.id.slice(0, 8);
-		const agentBranch = `feat/${feature.name}/agent-${shortId}`;
+		const agentBranch = this.agentBranchName(feature, shortId);
 		try {
 			execSync(
 				`git merge-base --is-ancestor "${agentBranch}" "${feature.branch}"`,
@@ -256,6 +254,17 @@ export class AgentManager {
 		} catch {
 			return false;
 		}
+	}
+
+	private agentBranchName(feature: Feature, shortId: string): string {
+		return `feat/${normalizeFeatureName(feature.name)}/agent-${shortId}`;
+	}
+
+	private agentWorktreePath(feature: Feature, shortId: string): string {
+		return path.join(
+			this.worktreeBase,
+			`${normalizeFeatureName(feature.name)}--${shortId}`,
+		);
 	}
 
 	private nextDefaultName(agents: Agent[]): string {

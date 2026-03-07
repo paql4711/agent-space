@@ -5,6 +5,7 @@ import { TERMINAL_COLOR_KEYS } from "../constants/colors";
 import type { Store } from "../storage/store";
 import type { Feature, FeatureStatus, IsolationMode } from "../types";
 import { isWorktreePathSafe } from "../utils/worktreeGuard";
+import { normalizeFeatureName } from "./featureName";
 
 export class FeatureManager {
 	private features: Feature[];
@@ -30,13 +31,26 @@ export class FeatureManager {
 	}
 
 	createFeature(name: string, isolation: IsolationMode): Feature {
-		if (this.features.some((f) => f.name === name)) {
-			throw new Error(`Feature "${name}" already exists`);
+		const displayName = name.trim();
+		const normalizedName = normalizeFeatureName(displayName);
+		if (!normalizedName) {
+			throw new Error("Feature name is required");
+		}
+
+		const existing = this.features.find(
+			(f) =>
+				f.name === displayName ||
+				normalizeFeatureName(f.name) === normalizedName,
+		);
+		if (existing) {
+			throw new Error(
+				`Feature "${displayName}" conflicts with existing feature "${existing.name}"`,
+			);
 		}
 
 		const id = crypto.randomUUID();
-		const branch = `feat/${name}`;
-		const worktreePath = path.join(this.worktreeBase, name);
+		const branch = `feat/${normalizedName}`;
+		const worktreePath = path.join(this.worktreeBase, normalizedName);
 
 		execSync(`git worktree add "${worktreePath}" -b "${branch}"`, {
 			cwd: this.repoRoot,
@@ -46,11 +60,11 @@ export class FeatureManager {
 
 		const feature: Feature = {
 			id,
-			name,
+			name: displayName,
 			branch,
 			worktreePath,
 			status: "active",
-			color: this.pickColor(name),
+			color: this.pickColor(displayName),
 			isolation,
 			createdAt: new Date().toISOString(),
 		};

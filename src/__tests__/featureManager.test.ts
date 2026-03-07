@@ -51,6 +51,15 @@ describe("FeatureManager", () => {
 			);
 		});
 
+		it("allows spaces in the display name and normalizes git names", () => {
+			mockExecSync.mockReturnValue(Buffer.from(""));
+			const feature = manager.createFeature("Auth system", "shared");
+
+			expect(feature.name).toBe("Auth system");
+			expect(feature.branch).toBe("feat/Auth-system");
+			expect(feature.worktreePath).toContain("Auth-system");
+		});
+
 		it("persists the feature to storage", () => {
 			mockExecSync.mockReturnValue(Buffer.from(""));
 			manager.createFeature("auth-system", "shared");
@@ -65,7 +74,16 @@ describe("FeatureManager", () => {
 			manager.createFeature("auth-system", "shared");
 
 			expect(() => manager.createFeature("auth-system", "shared")).toThrow(
-				"already exists",
+				"conflicts with existing feature",
+			);
+		});
+
+		it("throws when another feature would normalize to the same git name", () => {
+			mockExecSync.mockReturnValue(Buffer.from(""));
+			manager.createFeature("auth system", "shared");
+
+			expect(() => manager.createFeature("auth-system", "shared")).toThrow(
+				"conflicts with existing feature",
 			);
 		});
 	});

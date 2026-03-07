@@ -7,6 +7,7 @@ import { CodexSessionProvider } from "./agents/sessionProviders/codexSessionProv
 import { CodexSessionWatcher } from "./agents/sessionProviders/codexSessionWatcher";
 import { TerminalController } from "./agents/terminalController";
 import { TmuxIntegration } from "./agents/tmux";
+import { validateFeatureNameInput } from "./features/featureName";
 import { FeatureSidebarProvider } from "./features/featureSidebarProvider";
 import { HomePanel } from "./home/homePanel";
 import { PrerequisiteChecker } from "./prerequisites";
@@ -309,14 +310,8 @@ export async function activate(
 
 				const name = await vscode.window.showInputBox({
 					prompt: "Feature name",
-					placeHolder: "auth-system",
-					validateInput: (value) => {
-						if (!value.trim()) return "Feature name is required";
-						if (/\s/.test(value)) return "Feature name cannot contain spaces";
-						if (/[~^:?*[\]\\]/.test(value))
-							return "Contains invalid characters";
-						return undefined;
-					},
+					placeHolder: "Auth system",
+					validateInput: validateFeatureNameInput,
 				});
 				if (!name) return;
 
@@ -765,7 +760,8 @@ export async function activate(
 			}
 
 			if (activeFeatureId) {
-				const activeCtx = projectManager.findContextByFeatureId(activeFeatureId);
+				const activeCtx =
+					projectManager.findContextByFeatureId(activeFeatureId);
 				if (activeCtx?.project.id === pick.id) {
 					activeFeatureId = null;
 					const home = HomePanel.getInstance();
