@@ -3,3 +3,4 @@ agent-space*
 node_modules
 .env
 feature/
+.worktrees/
