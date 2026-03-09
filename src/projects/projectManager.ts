@@ -2,8 +2,10 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { AgentManager } from "../agents/agentManager";
 import type { TerminalController } from "../agents/terminalController";
+import { detectBaseBranch } from "../git/baseBranch";
 import { TmuxIntegration } from "../agents/tmux";
 import { FeatureManager } from "../features/featureManager";
+import { ProjectCommandManager } from "./projectCommandManager";
 import { ServiceManager } from "../services/serviceManager";
 import type { GlobalStore } from "../storage/globalStore";
 import { Store } from "../storage/store";
@@ -15,6 +17,7 @@ export interface ProjectContext {
 	featureManager: FeatureManager;
 	agentManager: AgentManager;
 	serviceManager: ServiceManager;
+	projectCommandManager: ProjectCommandManager;
 }
 
 export class ProjectManager {
@@ -85,6 +88,16 @@ export class ProjectManager {
 
 		// preferences.json → just notify (HomePanel re-reads on refresh)
 		if (parts.length === 1 && parts[0] === "preferences.json") {
+			this.notifyChange();
+			return;
+		}
+
+		// projects/{id}/project.json → reload project-level metadata
+		if (
+			parts.length === 3 &&
+			parts[0] === "projects" &&
+			parts[2] === "project.json"
+		) {
 			this.notifyChange();
 			return;
 		}
@@ -171,10 +184,13 @@ export class ProjectManager {
 			project.repoPath,
 			this.worktreeRelativePath,
 		);
+		const baseBranch = detectBaseBranch(project.repoPath);
 		const featureManager = new FeatureManager(
 			store,
+			project.id,
 			project.repoPath,
 			worktreeBase,
+			baseBranch,
 		);
 		const agentManager = new AgentManager(
 			store,
@@ -183,7 +199,15 @@ export class ProjectManager {
 			this.tmux,
 		);
 		const serviceManager = new ServiceManager(store, this.tmux);
-		return { project, store, featureManager, agentManager, serviceManager };
+		const projectCommandManager = new ProjectCommandManager(store);
+		return {
+			project,
+			store,
+			featureManager,
+			agentManager,
+			serviceManager,
+			projectCommandManager,
+		};
 	}
 
 	killProjectSessions(

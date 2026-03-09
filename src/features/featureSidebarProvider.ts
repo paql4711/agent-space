@@ -288,7 +288,12 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 
 	private renderProjectSection(ctx: ProjectContext): string {
 		const { project } = ctx;
-		const features = ctx.featureManager.getFeatures();
+		const features = [...ctx.featureManager.getFeatures()].sort((a, b) => {
+			if (a.kind !== b.kind) {
+				return a.kind === "base" ? -1 : 1;
+			}
+			return b.createdAt.localeCompare(a.createdAt);
+		});
 		const featureCards = features
 			.map((f) =>
 				this.renderFeatureCard(f, ctx.agentManager, ctx.serviceManager),
@@ -307,7 +312,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				<button class="btn-primary" onclick="newFeature(event, '${project.id}')">
                     <span>+</span> New Feature
                 </button>
-				${featureCards || '<div class="empty-placeholder">No features yet</div>'}
+				${featureCards || '<div class="empty-placeholder">No workspaces yet</div>'}
 			</div>
 		</div>`;
 	}
@@ -441,9 +446,13 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		return `
 		<div class="feature-card" onclick="selectFeature('${feature.id}')">
 			<div class="card-header">
-				<span class="feature-name">${this.escapeHtml(feature.branch)}</span>
+				<span class="feature-name">${this.escapeHtml(this.workspaceLabel(feature))}</span>
 				<span class="status-badge status-${feature.status}">${feature.status === "done" ? "Done" : "Active"}</span>
-				<button class="delete-btn" onclick="deleteFeature(event, '${feature.id}')" title="Delete Feature">${ICON_DELETE}</button>
+				${
+					feature.kind === "feature"
+						? `<button class="delete-btn" onclick="deleteFeature(event, '${feature.id}')" title="Delete Workspace">${ICON_DELETE}</button>`
+						: ""
+				}
 			</div>
 			${agentsHtml}
 			${servicesHtml}
@@ -452,6 +461,12 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
 			</div>
 		</div>`;
+	}
+
+	private workspaceLabel(feature: Feature): string {
+		return feature.kind === "base"
+			? `${feature.name} (${feature.branch})`
+			: feature.branch;
 	}
 
 	private escapeHtml(text: string): string {

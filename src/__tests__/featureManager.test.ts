@@ -25,8 +25,10 @@ describe("FeatureManager", () => {
 		store = new Store(tmpDir);
 		manager = new FeatureManager(
 			store,
+			"project-1",
 			repoRoot,
 			path.join(repoRoot, ".worktrees"),
+			"main",
 		);
 		mockExecSync.mockReset();
 	});
@@ -95,7 +97,8 @@ describe("FeatureManager", () => {
 
 			manager.deleteFeature(feature.id);
 
-			expect(manager.getFeatures()).toHaveLength(0);
+			expect(manager.getFeatures()).toHaveLength(1);
+			expect(manager.getFeatures()[0].kind).toBe("base");
 			expect(mockExecSync).toHaveBeenCalledWith(
 				expect.stringContaining("git worktree remove"),
 				expect.any(Object),
@@ -109,7 +112,7 @@ describe("FeatureManager", () => {
 			manager.createFeature("a", "shared");
 			manager.createFeature("b", "per-agent");
 
-			expect(manager.getFeatures()).toHaveLength(2);
+			expect(manager.getFeatures()).toHaveLength(3);
 		});
 
 		it("returns single feature by id", () => {
@@ -118,6 +121,20 @@ describe("FeatureManager", () => {
 
 			expect(manager.getFeature(f.id)?.name).toBe("a");
 			expect(manager.getFeature("nonexistent")).toBeUndefined();
+		});
+
+		it("includes a synthetic base workspace", () => {
+			const base = manager.getFeatures()[0];
+			expect(base.kind).toBe("base");
+			expect(base.branch).toBe("main");
+			expect(base.worktreePath).toBe(repoRoot);
+			expect(store.loadFeatures()).toEqual([]);
+		});
+
+		it("does not delete the built-in base workspace", () => {
+			const base = manager.getFeatures()[0];
+			manager.deleteFeature(base.id);
+			expect(manager.getFeatures()[0].id).toBe(base.id);
 		});
 	});
 

@@ -50,6 +50,8 @@ describe("TerminalController", () => {
 		color: "terminal.ansiBlue",
 		isolation: "shared",
 		createdAt: "2026-03-06T00:00:00Z",
+		kind: "feature",
+		managed: "user",
 	};
 
 	const agent: Agent = {

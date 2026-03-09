@@ -43,6 +43,8 @@ describe("HomePanel", () => {
 		color: "terminal.ansiBlue",
 		isolation: "shared",
 		createdAt: "2026-03-09T00:00:00Z",
+		kind: "feature",
+		managed: "user",
 	};
 
 	const webview = {

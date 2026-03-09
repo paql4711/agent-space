@@ -33,6 +33,8 @@ describe("AgentManager", () => {
 		color: "terminal.ansiBlue",
 		isolation: "shared",
 		createdAt: "2026-03-04T00:00:00Z",
+		kind: "feature",
+		managed: "user",
 	};
 
 	beforeEach(() => {

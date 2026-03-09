@@ -5,6 +5,7 @@ import type {
 	CompanionState,
 	Feature,
 	FeatureAgents,
+	ProjectSettings,
 	FeatureServices,
 	Service,
 } from "../types";
@@ -32,6 +33,27 @@ export class Store {
 		const filePath = path.join(this.baseDir, "features.json");
 		const state: CompanionState = { features };
 		this.atomicWriteSync(filePath, JSON.stringify(state, null, "\t"));
+	}
+
+	loadProjectSettings(): ProjectSettings {
+		const filePath = path.join(this.baseDir, "project.json");
+		try {
+			const raw = fs.readFileSync(filePath, "utf-8");
+			const data = JSON.parse(raw) as Partial<ProjectSettings>;
+			return {
+				customCommands: Array.isArray(data.customCommands)
+					? data.customCommands
+					: [],
+			};
+		} catch {
+			return { customCommands: [] };
+		}
+	}
+
+	saveProjectSettings(settings: ProjectSettings): void {
+		this.ensureDir(this.baseDir);
+		const filePath = path.join(this.baseDir, "project.json");
+		this.atomicWriteSync(filePath, JSON.stringify(settings, null, "\t"));
 	}
 
 	loadAgents(featureId: string): Agent[] {

@@ -14,11 +14,23 @@ import {
 	openFeatureGitView,
 	PENDING_GIT_VIEW_HANDOFF_PREF,
 } from "./git/gitViewHandoff";
+import {
+	listLocalBranches,
+	mergeFeatureIntoBranch,
+	rebaseFeatureOntoBase,
+	syncBaseBranch,
+} from "./git/workflow";
 import { HomePanel } from "./home/homePanel";
 import { PrerequisiteChecker } from "./prerequisites";
+import type { ProjectContext } from "./projects/projectManager";
 import { ProjectManager } from "./projects/projectManager";
 import { ensureDefaultToolConfigured } from "./startup/defaultToolInitializer";
 import { GlobalStore } from "./storage/globalStore";
+import type {
+	Feature,
+	ProjectCommandCwdMode,
+	ProjectCommandGroup,
+} from "./types";
 import {
 	resolveAgentSpaceIsolationAction,
 	type AgentSpaceUiState,
@@ -100,6 +112,11 @@ export async function activate(
 		worktreeRelativePath,
 		tmux,
 	);
+	const refreshUi = () => {
+		sidebarProvider.refresh();
+		const home = HomePanel.getInstance();
+		if (home) home.refresh();
+	};
 	const gitViewHandoffAction = getGitViewHandoffAction(
 		globalStore.getPreference(PENDING_GIT_VIEW_HANDOFF_PREF),
 		vscode.workspace.workspaceFolders,
@@ -235,6 +252,185 @@ export async function activate(
 		await showAgentSpace(featureId);
 	};
 
+	const resolveWorkspaceContext = (
+		featureId: string | null | undefined,
+	): { ctx: ProjectContext; feature: Feature } | null => {
+		if (!featureId) return null;
+		const ctx = projectManager.findContextByFeatureId(featureId);
+		if (!ctx) return null;
+		const feature = ctx.featureManager.getFeature(featureId);
+		if (!feature) return null;
+		return { ctx, feature };
+	};
+
+	const promptProjectContext = async () => {
+		const projects = projectManager.getProjects();
+		if (projects.length === 0) return null;
+		if (projects.length === 1) {
+			const ctx = projectManager.getContext(projects[0].id);
+			return ctx ?? null;
+		}
+		const pick = await vscode.window.showQuickPick(
+			projects.map((project) => ({
+				label: project.name,
+				description: project.repoPath,
+				projectId: project.id,
+			})),
+			{ placeHolder: "Select project" },
+		);
+		if (!pick) return null;
+		return projectManager.getContext(pick.projectId) ?? null;
+	};
+
+	const promptProjectCommand = async (ctx: ProjectContext): Promise<void> => {
+		const label = await vscode.window.showInputBox({
+			prompt: `Command label for ${ctx.project.name}`,
+			validateInput: (value) =>
+				value.trim() ? undefined : "Command label is required",
+		});
+		if (!label) return;
+
+		const command = await vscode.window.showInputBox({
+			prompt: "Shell command",
+			validateInput: (value) =>
+				value.trim() ? undefined : "Shell command is required",
+		});
+		if (!command) return;
+
+		const cwdPick = await vscode.window.showQuickPick<
+			{ label: string; value: ProjectCommandCwdMode }
+		>(
+			[
+				{
+					label: "Run in selected workspace",
+					value: "workspace",
+				},
+				{
+					label: "Run in project root",
+					value: "repoRoot",
+				},
+			],
+			{ placeHolder: "Working directory" },
+		);
+		if (!cwdPick) return;
+
+		const groupPick = await vscode.window.showQuickPick<
+			{ label: string; value: ProjectCommandGroup }
+		>(
+			[
+				{ label: "App", value: "app" },
+				{ label: "Test", value: "test" },
+				{ label: "Git", value: "git" },
+			],
+			{ placeHolder: "Command group" },
+		);
+		if (!groupPick) return;
+
+		ctx.projectCommandManager.addCommand(
+			label.trim(),
+			command.trim(),
+			cwdPick.value,
+			groupPick.value,
+		);
+		refreshUi();
+		vscode.window.showInformationMessage(
+			`Saved project command "${label.trim()}" for ${ctx.project.name}.`,
+		);
+	};
+
+	const runSyncBaseBranch = async (featureId: string): Promise<void> => {
+		const resolved = resolveWorkspaceContext(featureId);
+		if (!resolved) return;
+		try {
+			syncBaseBranch(
+				resolved.ctx.project.repoPath,
+				resolved.ctx.featureManager.getBaseBranch(),
+			);
+			vscode.window.showInformationMessage(
+				`Synced ${resolved.ctx.featureManager.getBaseBranch()} in ${resolved.ctx.project.name}.`,
+			);
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "Failed to sync base branch";
+			vscode.window.showErrorMessage(`Sync base branch failed: ${message}`);
+		}
+	};
+
+	const runRebaseOntoBase = async (featureId: string): Promise<void> => {
+		const resolved = resolveWorkspaceContext(featureId);
+		if (!resolved || resolved.feature.kind === "base") return;
+
+		try {
+			rebaseFeatureOntoBase(
+				resolved.ctx.project.repoPath,
+				resolved.feature.worktreePath,
+				resolved.ctx.featureManager.getBaseBranch(),
+			);
+			vscode.window.showInformationMessage(
+				`Rebased ${resolved.feature.branch} onto ${resolved.ctx.featureManager.getBaseBranch()}.`,
+			);
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "Failed to rebase onto base";
+			vscode.window.showErrorMessage(`Rebase failed: ${message}`);
+		}
+	};
+
+	const runMergeIntoBranch = async (featureId: string): Promise<void> => {
+		const resolved = resolveWorkspaceContext(featureId);
+		if (!resolved || resolved.feature.kind === "base") return;
+
+		const branches = listLocalBranches(resolved.ctx.project.repoPath).filter(
+			(branch) => branch !== resolved.feature.branch,
+		);
+		if (branches.length === 0) {
+			vscode.window.showWarningMessage(
+				"No local target branches available for merge.",
+			);
+			return;
+		}
+
+		const baseBranch = resolved.ctx.featureManager.getBaseBranch();
+		const pick = await vscode.window.showQuickPick(
+			branches.map((branch) => ({
+				label: branch,
+				description: branch === baseBranch ? "(base branch)" : undefined,
+			})),
+			{ placeHolder: "Merge current feature into which branch?" },
+		);
+		if (!pick) return;
+
+		const confirm = await vscode.window.showWarningMessage(
+			`Merge ${resolved.feature.branch} into ${pick.label}?`,
+			{ modal: true },
+			"Merge",
+		);
+		if (confirm !== "Merge") return;
+
+		try {
+			const result = mergeFeatureIntoBranch(
+				resolved.ctx.project.repoPath,
+				resolved.ctx.featureManager.getWorktreeBase(),
+				resolved.feature.branch,
+				pick.label,
+			);
+			if (result.keptForInspection) {
+				vscode.window.showErrorMessage(
+					`Merge stopped with conflicts. Inspect the temporary worktree at ${result.worktreePath}.`,
+				);
+				return;
+			}
+
+			vscode.window.showInformationMessage(
+				`Merged ${resolved.feature.branch} into ${pick.label}.`,
+			);
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "Failed to merge feature";
+			vscode.window.showErrorMessage(`Merge failed: ${message}`);
+		}
+	};
+
 	const claudeProvider = new ClaudeSessionProvider();
 	const codexProvider = new CodexSessionProvider();
 	const sessionNameSyncer = new SessionNameSyncer([
@@ -290,9 +486,7 @@ export async function activate(
 	);
 
 	projectManager.onChange(() => {
-		sidebarProvider.refresh();
-		const home = HomePanel.getInstance();
-		if (home) home.refresh();
+		refreshUi();
 	});
 
 	// Command: Open Home
@@ -496,45 +690,171 @@ export async function activate(
 				const picks: Array<{
 					label: string;
 					description: string;
-					serviceName: string;
-					serviceCommand: string;
-					launchCommand: string | null;
+					action: () => Promise<void> | void;
 				}> = [
 					{
 						label: "$(terminal) Open Terminal",
 						description: "Start an interactive shell in this worktree",
-						serviceName: "Terminal",
-						serviceCommand: "Interactive shell",
-						launchCommand: null,
+						action: () => {
+							const service = ctx.serviceManager.createService(
+								featureId,
+								"Terminal",
+								"Interactive shell",
+								null,
+							);
+							terminalController.createServiceTerminal(
+								feature,
+								service,
+								feature.worktreePath,
+							);
+							refreshUi();
+						},
 					},
+					...(feature.kind === "base"
+						? [
+								{
+									label: "$(sync) Sync Base Branch",
+									description: `Fast-forward ${ctx.featureManager.getBaseBranch()} in project root`,
+									action: () => runSyncBaseBranch(feature.id),
+								},
+							]
+						: [
+								{
+									label: "$(git-pull-request-create) Rebase Onto Base",
+									description: `Rebase ${feature.branch} onto ${ctx.featureManager.getBaseBranch()}`,
+									action: () => runRebaseOntoBase(feature.id),
+								},
+								{
+									label: "$(merge) Merge Into Selected Branch",
+									description: `Merge ${feature.branch} into another local branch`,
+									action: () => runMergeIntoBranch(feature.id),
+								},
+							]),
 					...scripts.map((s) => ({
 						label: s.name,
 						description: s.command,
-						serviceName: s.name,
-						serviceCommand: s.command,
-						launchCommand: s.command,
+						action: () => {
+							const service = ctx.serviceManager.createService(
+								featureId,
+								s.name,
+								s.command,
+								s.command,
+							);
+							terminalController.createServiceTerminal(
+								feature,
+								service,
+								feature.worktreePath,
+							);
+							refreshUi();
+						},
 					})),
+					...ctx.projectCommandManager.getCommands().map((command) => ({
+						label: command.label,
+						description: command.command,
+						action: () => {
+							const cwd =
+								command.cwdMode === "repoRoot"
+									? ctx.project.repoPath
+									: feature.worktreePath;
+							const service = ctx.serviceManager.createService(
+								featureId,
+								command.label,
+								command.command,
+								command.command,
+							);
+							terminalController.createServiceTerminal(feature, service, cwd);
+							refreshUi();
+						},
+					})),
+					{
+						label: "$(gear) Add Project Command",
+						description: "Save a reusable command for this project",
+						action: () => promptProjectCommand(ctx),
+					},
 				];
 
 				const pick = await vscode.window.showQuickPick(picks, {
-					placeHolder: "Start a service in this worktree",
+					placeHolder: "Run a workspace action",
 				});
 				if (!pick) return;
 
-				const service = ctx.serviceManager.createService(
-					featureId,
-					pick.serviceName,
-					pick.serviceCommand,
-					pick.launchCommand,
+				await pick.action();
+			},
+		),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.addProjectCommand",
+			async (featureIdArg?: string) => {
+				const resolved = resolveWorkspaceContext(featureIdArg ?? activeFeatureId);
+				const ctx = resolved?.ctx ?? (await promptProjectContext());
+				if (!ctx) return;
+				await promptProjectCommand(ctx);
+			},
+		),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.removeProjectCommand",
+			async (featureIdArg?: string) => {
+				const resolved = resolveWorkspaceContext(featureIdArg ?? activeFeatureId);
+				const ctx = resolved?.ctx ?? (await promptProjectContext());
+				if (!ctx) return;
+
+				const commands = ctx.projectCommandManager.getCommands();
+				if (commands.length === 0) {
+					vscode.window.showInformationMessage(
+						`No saved project commands for ${ctx.project.name}.`,
+					);
+					return;
+				}
+
+				const pick = await vscode.window.showQuickPick(
+					commands.map((command) => ({
+						label: command.label,
+						description: command.command,
+						commandId: command.id,
+					})),
+					{ placeHolder: "Select project command to remove" },
 				);
-				terminalController.createServiceTerminal(
-					feature,
-					service,
-					feature.worktreePath,
-				);
-				sidebarProvider.refresh();
-				const home = HomePanel.getInstance();
-				if (home) home.refresh();
+				if (!pick) return;
+				ctx.projectCommandManager.removeCommand(pick.commandId);
+				refreshUi();
+			},
+		),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.syncBaseBranch",
+			async (featureIdArg?: string) => {
+				const featureId = featureIdArg ?? activeFeatureId;
+				if (!featureId) return;
+				await runSyncBaseBranch(featureId);
+			},
+		),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.rebaseOntoBase",
+			async (featureIdArg?: string) => {
+				const featureId = featureIdArg ?? activeFeatureId;
+				if (!featureId) return;
+				await runRebaseOntoBase(featureId);
+			},
+		),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.mergeIntoBranch",
+			async (featureIdArg?: string) => {
+				const featureId = featureIdArg ?? activeFeatureId;
+				if (!featureId) return;
+				await runMergeIntoBranch(featureId);
 			},
 		),
 	);
@@ -648,6 +968,12 @@ export async function activate(
 
 				const feature = ctx.featureManager.getFeature(featureId);
 				if (!feature) return;
+				if (feature.kind === "base") {
+					vscode.window.showWarningMessage(
+						"The main workspace is built in and cannot be deleted.",
+					);
+					return;
+				}
 
 				const confirm = await vscode.window.showWarningMessage(
 					`Delete feature "${feature.name}"?\n\nWorktree: ${feature.worktreePath}\n\nThis removes the worktree and all agent data.`,
@@ -708,6 +1034,12 @@ export async function activate(
 
 				const feature = ctx.featureManager.getFeature(featureId);
 				if (!feature) return;
+				if (feature.kind === "base") {
+					vscode.window.showWarningMessage(
+						"Create Pull Request is only available for feature workspaces.",
+					);
+					return;
+				}
 
 				if (!prerequisites.isGhPrExtensionInstalled()) {
 					vscode.window.showErrorMessage(
@@ -756,6 +1088,27 @@ export async function activate(
 					vscode.Uri.file(feature.worktreePath),
 					{ forceNewWindow: true },
 				);
+			},
+		),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.openMainWorkspace",
+			async (projectIdArg?: string) => {
+				let ctx: ProjectContext | null | undefined =
+					projectIdArg !== undefined
+						? projectManager.getContext(projectIdArg)
+						: undefined;
+				if (!ctx) {
+					ctx = await promptProjectContext();
+				}
+				if (!ctx) return;
+				const base = ctx.featureManager
+					.getFeatures()
+					.find((feature) => feature.kind === "base");
+				if (!base) return;
+				await activateFeatureInCurrentWindow(base.id);
 			},
 		),
 	);

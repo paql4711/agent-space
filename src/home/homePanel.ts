@@ -136,7 +136,7 @@ export class HomePanel {
 		const ctx = this.projectManager.findContextByFeatureId(featureId);
 		const feature = ctx?.featureManager.getFeature(featureId);
 		this.panel.title = feature
-			? `Agent Space: ${feature.branch}`
+			? `Agent Space: ${this.workspaceLabel(feature)}`
 			: "Agent Space";
 		this.panel.reveal(vscode.ViewColumn.One, false);
 		this.startGitPolling();
@@ -532,11 +532,18 @@ export class HomePanel {
 		try {
 			let diffStat: string;
 			try {
-				diffStat = execSync(`git diff --stat HEAD...${feature.branch}`, {
-					cwd: feature.worktreePath,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "ignore"],
-				}).trim();
+				diffStat =
+					feature.kind === "base"
+						? execSync("git diff --stat HEAD", {
+								cwd: feature.worktreePath,
+								encoding: "utf-8",
+								stdio: ["ignore", "pipe", "ignore"],
+							}).trim()
+						: execSync(`git diff --stat HEAD...${feature.branch}`, {
+							cwd: feature.worktreePath,
+							encoding: "utf-8",
+							stdio: ["ignore", "pipe", "ignore"],
+							}).trim();
 			} catch {
 				diffStat = execSync("git diff --stat HEAD", {
 					cwd: feature.worktreePath,
@@ -590,7 +597,7 @@ export class HomePanel {
 
 		const contexts = this.projectManager.getAllContexts();
 
-		// Gather all features across all projects
+		// Gather all workspaces across all projects
 		const allFeatures: Array<{
 			feature: Feature;
 			projectName: string;
@@ -610,8 +617,14 @@ export class HomePanel {
 				});
 			}
 		}
-		// Sort: active first, then by creation date desc
+		// Sort: base workspaces first within a project grouping, then active first.
 		allFeatures.sort((a, b) => {
+			if (a.projectId !== b.projectId) {
+				return a.projectName.localeCompare(b.projectName);
+			}
+			if (a.feature.kind !== b.feature.kind) {
+				return a.feature.kind === "base" ? -1 : 1;
+			}
 			if (a.feature.status !== b.feature.status) {
 				return a.feature.status === "active" ? -1 : 1;
 			}
@@ -623,10 +636,10 @@ export class HomePanel {
 		let body: string;
 		if (projects.length === 0) {
 			body = `
-			<div class="welcome-container">
+					<div class="welcome-container">
 				<div class="welcome-header">
 					<div class="welcome-title">Agent Space</div>
-					<div class="welcome-subtitle">Your features at a glance</div>
+					<div class="welcome-subtitle">Your workspaces at a glance</div>
 				</div>
 				<div class="empty-welcome">
 					<div class="empty-welcome-title">No projects yet</div>
@@ -655,7 +668,7 @@ export class HomePanel {
 						<div class="feature-resume-card" onclick="resumeFeature('${f.id}')">
 							<div class="feature-card-top">
 								<div class="feature-card-color" style="background: ${dotColor}"></div>
-								<div class="feature-card-name">${this.escapeHtml(f.branch)}</div>
+								<div class="feature-card-name">${this.escapeHtml(this.workspaceLabel(f))}</div>
 								<span class="feature-card-status ${f.status}">${f.status === "done" ? "Done" : "Active"}</span>
 							</div>
 							<div class="feature-card-meta">
@@ -666,7 +679,7 @@ export class HomePanel {
 						</div>`;
 							})
 							.join("")
-					: '<div class="empty-welcome"><div class="empty-welcome-text">No features yet. Create one to get started.</div></div>';
+					: '<div class="empty-welcome"><div class="empty-welcome-text">No workspaces yet. Create one to get started.</div></div>';
 
 			const projectRows = contexts
 				.map((ctx) => {
@@ -687,7 +700,7 @@ export class HomePanel {
 			<div class="welcome-container">
 				<div class="welcome-header">
 					<div class="welcome-title">Agent Space</div>
-					<div class="welcome-subtitle">Your features at a glance</div>
+					<div class="welcome-subtitle">Your workspaces at a glance</div>
 				</div>
 				<div class="quick-actions-row">
 					<button class="action-btn" onclick="newFeature('${newFeatureProjectId}')">
@@ -697,14 +710,14 @@ export class HomePanel {
 						${ICON_FOLDER} Add Project
 					</button>
 				</div>
-				<div class="section-label">Features</div>
+				<div class="section-label">Workspaces</div>
 				<div class="feature-grid">
 					${featureCards}
 				</div>
 				<div class="section-label">Projects</div>
 				<table class="projects-table">
 					<thead>
-						<tr><th>Name</th><th>Path</th><th>Features</th></tr>
+						<tr><th>Name</th><th>Path</th><th>Workspaces</th></tr>
 					</thead>
 					<tbody>${projectRows}</tbody>
 				</table>
@@ -731,7 +744,7 @@ export class HomePanel {
 		if (!ctx) return this.emptyHtml("Feature not found");
 
 		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return this.emptyHtml("Feature not found");
+		if (!feature) return this.emptyHtml("Workspace not found");
 
 		const agents = ctx.agentManager.getAgents(featureId);
 		const services = ctx.serviceManager.getServices(featureId);
@@ -762,7 +775,7 @@ export class HomePanel {
 			<div class="header-color-dot" style="background: ${dotColor}"></div>
 			<div class="header-info">
 				<div class="header-title">${this.escapeHtml(feature.name)}</div>
-				<div class="header-branch">${this.escapeHtml(feature.branch)}</div>
+				<div class="header-branch">${this.escapeHtml(this.workspaceLabel(feature))}</div>
 			</div>
 			<span class="header-status ${feature.status}">${feature.status === "done" ? "Done" : "Active"}</span>
 			<div class="header-actions">
@@ -1075,7 +1088,7 @@ export class HomePanel {
 			<div class="section-label">Tmux Sessions</div>
 			${
 				featureGroup ??
-				'<div class="tmux-empty-state">No managed tmux sessions for this feature.</div>'
+				'<div class="tmux-empty-state">No managed tmux sessions for this workspace.</div>'
 			}
 		</div>`;
 	}
@@ -1112,11 +1125,11 @@ export class HomePanel {
 			<div class="tmux-feature-header">
 				<div>
 					<div class="tmux-feature-name">${this.escapeHtml(feature.name)}</div>
-					<div class="tmux-feature-branch">${this.escapeHtml(feature.branch)}</div>
+					<div class="tmux-feature-branch">${this.escapeHtml(this.workspaceLabel(feature))}</div>
 				</div>
 				<div class="tmux-feature-actions">
 					<span class="tmux-count-badge">${liveRows.length} session${liveRows.length === 1 ? "" : "s"}</span>
-					<button class="quick-action-btn danger subtle" onclick="killFeatureSessions('${feature.id}')">Kill Feature Sessions</button>
+					<button class="quick-action-btn danger subtle" onclick="killFeatureSessions('${feature.id}')">Kill Workspace Sessions</button>
 					${
 						projectId
 							? `<button class="quick-action-btn subtle" onclick="resumeFeature('${feature.id}')">Open</button>`
@@ -1125,7 +1138,7 @@ export class HomePanel {
 				</div>
 			</div>
 			<div class="tmux-session-list">
-				${liveRows.length > 0 ? liveRows.join("") : '<div class="tmux-empty-state">No live tmux sessions for this feature.</div>'}
+				${liveRows.length > 0 ? liveRows.join("") : '<div class="tmux-empty-state">No live tmux sessions for this workspace.</div>'}
 			</div>
 			${inactiveSection}
 		</div>`;
@@ -1245,11 +1258,15 @@ export class HomePanel {
 					${ICON_PLUS} Add Agent
 				</button>
 				<button class="quick-action-btn" onclick="quickAction('addService', '${feature.id}')">
-					${ICON_SERVER} Add Service
+					${ICON_SERVER} Run Actions
 				</button>
-				<button class="quick-action-btn" onclick="quickAction('createPR', '${feature.id}')">
+				${
+					feature.kind === "feature"
+						? `<button class="quick-action-btn" onclick="quickAction('createPR', '${feature.id}')">
 					${ICON_PR} Create PR
-				</button>
+				</button>`
+						: ""
+				}
 				<button class="quick-action-btn" onclick="quickAction('syncNames', '${feature.id}')">
 					${ICON_SYNC} Sync Names
 				</button>
@@ -1263,10 +1280,20 @@ export class HomePanel {
 			<button class="quick-action-btn" onclick="quickAction('openFolder', '${feature.id}')">
 				${ICON_FOLDER} Open Folder
 			</button>
-			<button class="quick-action-btn danger" onclick="deleteFeature('${feature.id}')">
-				Delete Feature
-			</button>
+			${
+				feature.kind === "feature"
+					? `<button class="quick-action-btn danger" onclick="deleteFeature('${feature.id}')">
+				Delete Workspace
+			</button>`
+					: ""
+			}
 		</div>`;
+	}
+
+	private workspaceLabel(feature: Feature): string {
+		return feature.kind === "base"
+			? `${feature.name} (${feature.branch})`
+			: feature.branch;
 	}
 
 	private emptyHtml(message: string): string {

@@ -18,6 +18,8 @@ describe("types", () => {
 			color: "terminal.ansiBlue",
 			isolation: "shared",
 			createdAt: new Date().toISOString(),
+			kind: "feature",
+			managed: "user",
 		};
 		expect(feature.id).toBe("test-uuid");
 		expect(feature.status).toBe("active");

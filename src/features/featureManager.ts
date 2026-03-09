@@ -9,25 +9,48 @@ import { normalizeFeatureName } from "./featureName";
 
 export class FeatureManager {
 	private features: Feature[];
+	private readonly baseFeatureId: string;
 
 	constructor(
 		private readonly store: Store,
+		private readonly projectId: string,
 		private readonly repoRoot: string,
 		private readonly worktreeBase: string,
+		private readonly baseBranch: string,
 	) {
-		this.features = store.loadFeatures();
+		this.baseFeatureId = `base:${projectId}`;
+		this.features = store.loadFeatures().map((feature) =>
+			this.normalizeStoredFeature(feature),
+		);
 	}
 
 	reload(): void {
-		this.features = this.store.loadFeatures();
+		this.features = this.store.loadFeatures().map((feature) =>
+			this.normalizeStoredFeature(feature),
+		);
 	}
 
 	getFeatures(): Feature[] {
-		return [...this.features];
+		return [this.getBaseFeature(), ...this.features];
 	}
 
 	getFeature(id: string): Feature | undefined {
+		if (id === this.baseFeatureId) {
+			return this.getBaseFeature();
+		}
 		return this.features.find((f) => f.id === id);
+	}
+
+	getBaseBranch(): string {
+		return this.baseBranch;
+	}
+
+	getWorktreeBase(): string {
+		return this.worktreeBase;
+	}
+
+	isBaseFeatureId(id: string): boolean {
+		return id === this.baseFeatureId;
 	}
 
 	createFeature(name: string, isolation: IsolationMode): Feature {
@@ -67,6 +90,8 @@ export class FeatureManager {
 			color: this.pickColor(displayName),
 			isolation,
 			createdAt: new Date().toISOString(),
+			kind: "feature",
+			managed: "user",
 		};
 
 		this.features.push(feature);
@@ -75,6 +100,7 @@ export class FeatureManager {
 	}
 
 	deleteFeature(id: string): void {
+		if (this.isBaseFeatureId(id)) return;
 		const feature = this.features.find((f) => f.id === id);
 		if (!feature) return;
 
@@ -100,6 +126,7 @@ export class FeatureManager {
 	}
 
 	updateFeatureStatus(id: string, status: FeatureStatus): void {
+		if (this.isBaseFeatureId(id)) return;
 		const feature = this.features.find((f) => f.id === id);
 		if (!feature) return;
 		feature.status = status;
@@ -107,10 +134,34 @@ export class FeatureManager {
 	}
 
 	updateFeatureIsolation(id: string, isolation: IsolationMode): void {
+		if (this.isBaseFeatureId(id)) return;
 		const feature = this.features.find((f) => f.id === id);
 		if (!feature) return;
 		feature.isolation = isolation;
 		this.store.saveFeatures(this.features);
+	}
+
+	private getBaseFeature(): Feature {
+		return {
+			id: this.baseFeatureId,
+			name: "Main",
+			branch: this.baseBranch,
+			worktreePath: this.repoRoot,
+			status: "active",
+			color: this.pickColor("Main"),
+			isolation: "shared",
+			createdAt: "",
+			kind: "base",
+			managed: "builtin",
+		};
+	}
+
+	private normalizeStoredFeature(feature: Feature): Feature {
+		return {
+			...feature,
+			kind: feature.kind ?? "feature",
+			managed: feature.managed ?? "user",
+		};
 	}
 
 	private pickColor(name: string): string {

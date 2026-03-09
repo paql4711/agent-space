@@ -2,7 +2,7 @@
 	"name": "agent-space",
 	"displayName": "Agent Space",
 	"publisher": "paql4711",
-	"description": "Run any coding CLI per feature with isolated Git worktrees and persistent sessions in VS Code",
+	"description": "Run coding CLI workflows per workspace with isolated Git worktrees and persistent sessions in VS Code",
 	"version": "0.3.0",
 	"icon": "media/marketplace/icon.png",
 	"license": "MIT",
@@ -57,7 +57,7 @@
 			"agentSpace": [
 				{
 					"id": "agentSpace.features",
-					"name": "Features",
+					"name": "Workspaces",
 					"type": "webview"
 				}
 			]
@@ -71,12 +71,12 @@
 			},
 			{
 				"command": "agentSpace.selectFeature",
-				"title": "Select Feature",
+				"title": "Select Workspace",
 				"category": "Agent Space"
 			},
 			{
 				"command": "agentSpace.deleteFeature",
-				"title": "Delete Feature",
+				"title": "Delete Workspace",
 				"category": "Agent Space",
 				"icon": "$(trash)"
 			},
@@ -94,7 +94,7 @@
 			},
 			{
 				"command": "agentSpace.addService",
-				"title": "Add Service",
+				"title": "Run Workspace Action",
 				"category": "Agent Space",
 				"icon": "$(server-process)"
 			},
@@ -132,9 +132,40 @@
 			},
 			{
 				"command": "agentSpace.openWorkspace",
-				"title": "Open Feature Home",
+				"title": "Open Workspace Home",
 				"category": "Agent Space",
 				"icon": "$(window)"
+			},
+			{
+				"command": "agentSpace.openMainWorkspace",
+				"title": "Open Main Workspace",
+				"category": "Agent Space",
+				"icon": "$(git-branch)"
+			},
+			{
+				"command": "agentSpace.addProjectCommand",
+				"title": "Add Project Command",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.removeProjectCommand",
+				"title": "Remove Project Command",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.syncBaseBranch",
+				"title": "Sync Base Branch",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.rebaseOntoBase",
+				"title": "Rebase Onto Base",
+				"category": "Agent Space"
+			},
+			{
+				"command": "agentSpace.mergeIntoBranch",
+				"title": "Merge Into Selected Branch",
+				"category": "Agent Space"
 			},
 			{
 				"command": "agentSpace.openHome",
