@@ -92,11 +92,11 @@ describe("TmuxIntegration", () => {
 	// configureSession
 	// -------------------------------------------------------------------
 	describe("configureSession", () => {
-		it("calls exec for mouse and status options", () => {
+		it("calls exec for session-scoped options without enabling tmux mouse mode", () => {
 			mockExec.mockReturnValue("");
 			tmux.configureSession("my-session");
 			expect(mockExec).toHaveBeenCalledWith(
-				'tmux set-option -t "my-session" mouse on',
+				'tmux set-option -t "my-session" mouse off',
 			);
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux set-option -t "my-session" status off',
@@ -119,7 +119,7 @@ describe("TmuxIntegration", () => {
 			mockExec.mockReturnValue("");
 			tmux.configureServiceSession("svc-session");
 			expect(mockExec).toHaveBeenCalledWith(
-				'tmux set-option -t "svc-session" mouse on',
+				'tmux set-option -t "svc-session" mouse off',
 			);
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux set-option -t "svc-session" status off',

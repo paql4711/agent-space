@@ -29,20 +29,25 @@ export class TmuxIntegration {
 	}
 
 	configureSession(sessionName: string): void {
-		try {
-			exec(`tmux set-option -t "${sessionName}" mouse on`);
-			exec(`tmux set-option -t "${sessionName}" status off`);
-		} catch {
-			// Session may not exist
-		}
+		// Keep tmux from intercepting right-clicks with its pane menu inside agent terminals.
+		this.runSessionConfigCommand(sessionName, "set-option", "mouse off");
+		this.runSessionConfigCommand(sessionName, "set-option", "status off");
 	}
 
 	configureServiceSession(sessionName: string): void {
 		this.configureSession(sessionName);
+		this.runSessionConfigCommand(sessionName, "set-option", "remain-on-exit on");
+	}
+
+	private runSessionConfigCommand(
+		sessionName: string,
+		command: "set-option",
+		args: string,
+	): void {
 		try {
-			exec(`tmux set-option -t "${sessionName}" remain-on-exit on`);
+			exec(`tmux ${command} -t "${sessionName}" ${args}`);
 		} catch {
-			// Session may not exist
+			// Session may not exist or the binding may not be present.
 		}
 	}
 

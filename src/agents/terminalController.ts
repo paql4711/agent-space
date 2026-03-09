@@ -85,6 +85,8 @@ export class TerminalController implements vscode.Disposable {
 			return undefined;
 		}
 
+		this.tmux.configureSession(sessionName);
+
 		const { shellPath, shellArgs } = getTerminalShellArgs(sessionName);
 
 		const terminal = vscode.window.createTerminal({
@@ -123,6 +125,9 @@ export class TerminalController implements vscode.Disposable {
 	): vscode.Terminal | undefined {
 		const existing = this.terminals.get(agent.id);
 		if (existing) {
+			const sessionName =
+				agent.tmuxSession ?? this.tmux.sessionName(feature.id, agent.id);
+			this.tmux.configureSession(sessionName);
 			existing.show();
 			return existing;
 		}
@@ -136,6 +141,7 @@ export class TerminalController implements vscode.Disposable {
 	): vscode.Terminal {
 		const existing = this.terminals.get(service.id);
 		if (existing) {
+			this.tmux.configureServiceSession(service.tmuxSession);
 			existing.show();
 			return existing;
 		}
@@ -153,11 +159,12 @@ export class TerminalController implements vscode.Disposable {
 		if (!this.tmux.isSessionAlive(sessionName)) {
 			try {
 				exec(this.resolveServiceStartCommand(service), { cwd });
-				this.tmux.configureServiceSession(sessionName);
 			} catch (err) {
 				console.warn(`[TerminalController] service tmux create failed: ${err}`);
 			}
 		}
+
+		this.tmux.configureServiceSession(sessionName);
 
 		const { shellPath, shellArgs } = getTerminalShellArgs(sessionName);
 
