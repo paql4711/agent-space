@@ -42,6 +42,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 
 	onVisibilityChange(callback: (visible: boolean) => void): void {
 		this._onVisibilityChange = callback;
+		if (this._view) {
+			callback(this._view.visible);
+		}
 	}
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {

@@ -118,6 +118,10 @@ export class HomePanel {
 		callback: (state: { active: boolean; visible: boolean }) => void,
 	): void {
 		this.onViewStateChangeCallback = callback;
+		callback({
+			active: this.panel.active,
+			visible: this.panel.visible,
+		});
 	}
 
 	public showWelcome(): void {
@@ -135,7 +139,7 @@ export class HomePanel {
 		this.panel.title = feature
 			? `Agent Space: ${feature.branch}`
 			: "Agent Space";
-		this.panel.reveal(vscode.ViewColumn.One, true);
+		this.panel.reveal(vscode.ViewColumn.One, false);
 		this.startGitPolling();
 		this.panel.webview.html = this.getFeatureHtml(featureId);
 	}

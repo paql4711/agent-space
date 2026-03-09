@@ -19,6 +19,10 @@ import { PrerequisiteChecker } from "./prerequisites";
 import { ProjectManager } from "./projects/projectManager";
 import { ensureDefaultToolConfigured } from "./startup/defaultToolInitializer";
 import { GlobalStore } from "./storage/globalStore";
+import {
+	resolveAgentSpaceIsolationAction,
+	type AgentSpaceUiState,
+} from "./workspace/agentSpaceUiState";
 import { AgentWorkspaceIsolation } from "./workspace/agentWorkspaceIsolation";
 
 let activeFeatureId: string | null = null;
@@ -38,6 +42,39 @@ export async function activate(
 	const storagePath = context.globalStorageUri.fsPath;
 	const globalStore = new GlobalStore(storagePath);
 	const workspaceIsolation = new AgentWorkspaceIsolation();
+	let agentSpaceUiState: AgentSpaceUiState = {
+		sidebarVisible: false,
+		homeActive: false,
+	};
+	let isolationUpdateChain = Promise.resolve();
+
+	const updateAgentSpaceUiState = (
+		partial: Partial<AgentSpaceUiState>,
+	): void => {
+		const previousState = agentSpaceUiState;
+		const nextState = {
+			...previousState,
+			...partial,
+		};
+		const action = resolveAgentSpaceIsolationAction(previousState, nextState);
+		agentSpaceUiState = nextState;
+
+		if (action === "noop") {
+			return;
+		}
+
+		isolationUpdateChain = isolationUpdateChain
+			.catch((error) => {
+				console.error("Agent Space isolation transition failed", error);
+			})
+			.then(async () => {
+				if (action === "enter") {
+					await workspaceIsolation.enter();
+					return;
+				}
+				await workspaceIsolation.leave();
+			});
+	};
 
 	// One-time migration from Memento to file-based GlobalStore
 	if (!globalStore.hasProjectsFile()) {
@@ -127,6 +164,9 @@ export async function activate(
 			sidebarProvider,
 		),
 	);
+	sidebarProvider.onVisibilityChange((visible) => {
+		updateAgentSpaceUiState({ sidebarVisible: visible });
+	});
 
 	const ensureHomePanel = () => {
 		const panel = HomePanel.createOrShow(
@@ -138,15 +178,7 @@ export async function activate(
 			terminalController,
 		);
 		panel.onViewStateChange(({ active }) => {
-			if (active) {
-				void workspaceIsolation.enter();
-				return;
-			}
-
-			if (activeFeatureId) {
-				terminalController.disposeFeatureTerminals(activeFeatureId);
-			}
-			void workspaceIsolation.leave();
+			updateAgentSpaceUiState({ homeActive: active });
 		});
 		return panel;
 	};
@@ -159,7 +191,6 @@ export async function activate(
 		} else {
 			panel.showWelcome();
 		}
-		await workspaceIsolation.enter();
 		return panel;
 	};
 
@@ -203,25 +234,6 @@ export async function activate(
 
 		await showAgentSpace(featureId);
 	};
-
-	sidebarProvider.onVisibilityChange((visible) => {
-		if (!visible) {
-			return;
-		}
-
-		if (activeFeatureId) {
-			const ctx = projectManager.findContextByFeatureId(activeFeatureId);
-			if (!ctx) return;
-			const feature = ctx.featureManager.getFeature(activeFeatureId);
-			if (feature) {
-				terminalController.reconnectTmuxSessions(feature);
-			}
-			void showAgentSpace(activeFeatureId);
-			return;
-		}
-
-		void showAgentSpace();
-	});
 
 	const claudeProvider = new ClaudeSessionProvider();
 	const codexProvider = new CodexSessionProvider();
