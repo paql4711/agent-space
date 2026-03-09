@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0] - 2026-03-09
+
+### Fixes
+- satisfy biome quality gate
+
+### Other
+- Add main workspace and local review helpers
+- Remove feature git view actions
+- Track Agent Space UI isolation state
+
+
 ## [0.3.0] - 2026-03-07
 
 
