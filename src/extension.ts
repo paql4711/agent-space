@@ -32,8 +32,8 @@ import type {
 	ProjectCommandGroup,
 } from "./types";
 import {
-	resolveAgentSpaceIsolationAction,
 	type AgentSpaceUiState,
+	resolveAgentSpaceIsolationAction,
 } from "./workspace/agentSpaceUiState";
 import { AgentWorkspaceIsolation } from "./workspace/agentWorkspaceIsolation";
 
@@ -297,9 +297,10 @@ export async function activate(
 		});
 		if (!command) return;
 
-		const cwdPick = await vscode.window.showQuickPick<
-			{ label: string; value: ProjectCommandCwdMode }
-		>(
+		const cwdPick = await vscode.window.showQuickPick<{
+			label: string;
+			value: ProjectCommandCwdMode;
+		}>(
 			[
 				{
 					label: "Run in selected workspace",
@@ -314,9 +315,10 @@ export async function activate(
 		);
 		if (!cwdPick) return;
 
-		const groupPick = await vscode.window.showQuickPick<
-			{ label: string; value: ProjectCommandGroup }
-		>(
+		const groupPick = await vscode.window.showQuickPick<{
+			label: string;
+			value: ProjectCommandGroup;
+		}>(
 			[
 				{ label: "App", value: "app" },
 				{ label: "Test", value: "test" },
@@ -787,7 +789,9 @@ export async function activate(
 		vscode.commands.registerCommand(
 			"agentSpace.addProjectCommand",
 			async (featureIdArg?: string) => {
-				const resolved = resolveWorkspaceContext(featureIdArg ?? activeFeatureId);
+				const resolved = resolveWorkspaceContext(
+					featureIdArg ?? activeFeatureId,
+				);
 				const ctx = resolved?.ctx ?? (await promptProjectContext());
 				if (!ctx) return;
 				await promptProjectCommand(ctx);
@@ -799,7 +803,9 @@ export async function activate(
 		vscode.commands.registerCommand(
 			"agentSpace.removeProjectCommand",
 			async (featureIdArg?: string) => {
-				const resolved = resolveWorkspaceContext(featureIdArg ?? activeFeatureId);
+				const resolved = resolveWorkspaceContext(
+					featureIdArg ?? activeFeatureId,
+				);
 				const ctx = resolved?.ctx ?? (await promptProjectContext());
 				if (!ctx) return;
 

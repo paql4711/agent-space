@@ -75,7 +75,7 @@ export function mergeFeatureIntoBranch(
 		exec(`git merge --no-ff "${featureBranch}"`, { cwd: worktreePath });
 		runGit(repoRoot, `git worktree remove "${worktreePath}" --force`);
 		return { worktreePath, keptForInspection: false };
-	} catch (error) {
+	} catch (_error) {
 		return { worktreePath, keptForInspection: true };
 	}
 }

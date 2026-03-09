@@ -29,13 +29,13 @@ describe("detectBaseBranch", () => {
 			if (cmd.includes("git symbolic-ref")) {
 				throw new Error("missing");
 			}
-			if (cmd.includes('refs/heads/main')) {
+			if (cmd.includes("refs/heads/main")) {
 				throw new Error("missing");
 			}
-			if (cmd.includes('refs/remotes/origin/main')) {
+			if (cmd.includes("refs/remotes/origin/main")) {
 				throw new Error("missing");
 			}
-			if (cmd.includes('refs/heads/master')) {
+			if (cmd.includes("refs/heads/master")) {
 				return "";
 			}
 			return "";

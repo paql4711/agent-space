@@ -540,9 +540,9 @@ export class HomePanel {
 								stdio: ["ignore", "pipe", "ignore"],
 							}).trim()
 						: execSync(`git diff --stat HEAD...${feature.branch}`, {
-							cwd: feature.worktreePath,
-							encoding: "utf-8",
-							stdio: ["ignore", "pipe", "ignore"],
+								cwd: feature.worktreePath,
+								encoding: "utf-8",
+								stdio: ["ignore", "pipe", "ignore"],
 							}).trim();
 			} catch {
 				diffStat = execSync("git diff --stat HEAD", {

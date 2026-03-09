@@ -36,7 +36,11 @@ export class TmuxIntegration {
 
 	configureServiceSession(sessionName: string): void {
 		this.configureSession(sessionName);
-		this.runSessionConfigCommand(sessionName, "set-option", "remain-on-exit on");
+		this.runSessionConfigCommand(
+			sessionName,
+			"set-option",
+			"remain-on-exit on",
+		);
 	}
 
 	private runSessionConfigCommand(

@@ -13,21 +13,21 @@ export class FeatureManager {
 
 	constructor(
 		private readonly store: Store,
-		private readonly projectId: string,
+		readonly projectId: string,
 		private readonly repoRoot: string,
 		private readonly worktreeBase: string,
 		private readonly baseBranch: string,
 	) {
 		this.baseFeatureId = `base:${projectId}`;
-		this.features = store.loadFeatures().map((feature) =>
-			this.normalizeStoredFeature(feature),
-		);
+		this.features = store
+			.loadFeatures()
+			.map((feature) => this.normalizeStoredFeature(feature));
 	}
 
 	reload(): void {
-		this.features = this.store.loadFeatures().map((feature) =>
-			this.normalizeStoredFeature(feature),
-		);
+		this.features = this.store
+			.loadFeatures()
+			.map((feature) => this.normalizeStoredFeature(feature));
 	}
 
 	getFeatures(): Feature[] {

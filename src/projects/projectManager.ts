@@ -2,14 +2,14 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { AgentManager } from "../agents/agentManager";
 import type { TerminalController } from "../agents/terminalController";
-import { detectBaseBranch } from "../git/baseBranch";
 import { TmuxIntegration } from "../agents/tmux";
 import { FeatureManager } from "../features/featureManager";
-import { ProjectCommandManager } from "./projectCommandManager";
+import { detectBaseBranch } from "../git/baseBranch";
 import { ServiceManager } from "../services/serviceManager";
 import type { GlobalStore } from "../storage/globalStore";
 import { Store } from "../storage/store";
 import type { Project } from "../types";
+import { ProjectCommandManager } from "./projectCommandManager";
 
 export interface ProjectContext {
 	project: Project;

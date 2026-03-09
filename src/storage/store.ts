@@ -5,8 +5,8 @@ import type {
 	CompanionState,
 	Feature,
 	FeatureAgents,
-	ProjectSettings,
 	FeatureServices,
+	ProjectSettings,
 	Service,
 } from "../types";
 
