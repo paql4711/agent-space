@@ -4,7 +4,6 @@ import type { CodingToolRegistry } from "../agents/codingToolRegistry";
 import type { TerminalController } from "../agents/terminalController";
 import type { TmuxIntegration } from "../agents/tmux";
 import { TERMINAL_COLOR_HEX, TERMINAL_COLOR_MAP } from "../constants/colors";
-import { ICON_GIT } from "../constants/icons";
 import type { ProjectManager } from "../projects/projectManager";
 import type { GlobalStore } from "../storage/globalStore";
 import type { Agent, Feature, Service } from "../types";
@@ -270,9 +269,6 @@ export class HomePanel {
 			// Feature actions
 			case "createPR":
 				run("agentSpace.createPR", message.featureId);
-				break;
-			case "openGitView":
-				run("agentSpace.openFeatureGitView", message.featureId);
 				break;
 			case "openFolder":
 				run("agentSpace.openFeatureFolder", message.featureId);
@@ -773,9 +769,6 @@ export class HomePanel {
 				<button class="header-action-btn" onclick="quickAction('refresh', '${feature.id}')" title="Refresh">
 					${ICON_REFRESH}
 				</button>
-				<button class="header-action-btn" onclick="quickAction('openGitView', '${feature.id}')" title="Open Workspace">
-					${ICON_GIT}
-				</button>
 				<button class="header-action-btn" onclick="quickAction('openFolder', '${feature.id}')" title="Open Folder">
 					${ICON_FOLDER}
 				</button>
@@ -1257,9 +1250,6 @@ export class HomePanel {
 				<button class="quick-action-btn" onclick="quickAction('createPR', '${feature.id}')">
 					${ICON_PR} Create PR
 				</button>
-				<button class="quick-action-btn" onclick="quickAction('openGitView', '${feature.id}')">
-					${ICON_GIT} Open Workspace
-				</button>
 				<button class="quick-action-btn" onclick="quickAction('syncNames', '${feature.id}')">
 					${ICON_SYNC} Sync Names
 				</button>
@@ -1270,9 +1260,6 @@ export class HomePanel {
 	private renderFeatureActions(feature: Feature): string {
 		return `
 		<div class="feature-actions-section">
-			<button class="quick-action-btn" onclick="quickAction('openGitView', '${feature.id}')">
-				${ICON_GIT} Open Workspace
-			</button>
 			<button class="quick-action-btn" onclick="quickAction('openFolder', '${feature.id}')">
 				${ICON_FOLDER} Open Folder
 			</button>
