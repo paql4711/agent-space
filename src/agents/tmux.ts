@@ -3,21 +3,40 @@ import { commandExists, exec, execSilent } from "../utils/platform";
 export const TMUX_SESSION_PREFIX = "agent-space";
 const LEGACY_TMUX_SESSION_PREFIX = "companion";
 
+/**
+ * Replace characters that tmux interprets as target-specification separators.
+ * `:` delimits session:window and `.` delimits window.pane — both break
+ * `-t` lookups when they appear inside a session name.
+ */
+function sanitizeSessionName(name: string): string {
+	return name.replace(/[:.\/]/g, "_");
+}
+
 export class TmuxIntegration {
+	private nativeScrollConfigured = false;
+
 	sessionName(featureId: string, agentId: string): string {
-		return `${TMUX_SESSION_PREFIX}-${featureId}-${agentId}`;
+		return sanitizeSessionName(
+			`${TMUX_SESSION_PREFIX}-${featureId}-${agentId}`,
+		);
 	}
 
 	serviceSessionName(featureId: string, serviceId: string): string {
-		return `${TMUX_SESSION_PREFIX}-svc-${featureId}-${serviceId}`;
+		return sanitizeSessionName(
+			`${TMUX_SESSION_PREFIX}-svc-${featureId}-${serviceId}`,
+		);
 	}
 
 	legacySessionName(featureId: string, agentId: string): string {
-		return `${LEGACY_TMUX_SESSION_PREFIX}-${featureId}-${agentId}`;
+		return sanitizeSessionName(
+			`${LEGACY_TMUX_SESSION_PREFIX}-${featureId}-${agentId}`,
+		);
 	}
 
 	legacyServiceSessionName(featureId: string, serviceId: string): string {
-		return `${LEGACY_TMUX_SESSION_PREFIX}-svc-${featureId}-${serviceId}`;
+		return sanitizeSessionName(
+			`${LEGACY_TMUX_SESSION_PREFIX}-svc-${featureId}-${serviceId}`,
+		);
 	}
 
 	isAvailable(): boolean {
@@ -29,29 +48,42 @@ export class TmuxIntegration {
 	}
 
 	configureSession(sessionName: string): void {
-		// Keep tmux from intercepting right-clicks with its pane menu inside agent terminals.
-		this.runSessionConfigCommand(sessionName, "set-option", "mouse off");
-		this.runSessionConfigCommand(sessionName, "set-option", "status off");
+		try {
+			exec(`tmux set-option -t "${sessionName}" status off`);
+			exec(`tmux set-option -t "${sessionName}" mouse on`);
+			this.ensureNativeScroll();
+		} catch {
+			// Session may not exist
+		}
+	}
+
+	/**
+	 * Disable alternate-screen mode (smcup/rmcup) and mouse-tracking
+	 * pass-through (XM) on the outer terminal so that VS Code's xterm.js
+	 * keeps its normal scrollback buffer and handles scroll-wheel events
+	 * natively instead of forwarding them as input to the CLI tool.
+	 */
+	private ensureNativeScroll(): void {
+		if (this.nativeScrollConfigured) {
+			return;
+		}
+		try {
+			const overrides = exec("tmux show -sv terminal-overrides").trim();
+			if (!overrides.includes("smcup@")) {
+				exec('tmux set -sa terminal-overrides ",*:smcup@:rmcup@:XM@"');
+			}
+			this.nativeScrollConfigured = true;
+		} catch {
+			// Ignore — server may not be ready
+		}
 	}
 
 	configureServiceSession(sessionName: string): void {
 		this.configureSession(sessionName);
-		this.runSessionConfigCommand(
-			sessionName,
-			"set-option",
-			"remain-on-exit on",
-		);
-	}
-
-	private runSessionConfigCommand(
-		sessionName: string,
-		command: "set-option",
-		args: string,
-	): void {
 		try {
-			exec(`tmux ${command} -t "${sessionName}" ${args}`);
+			exec(`tmux set-option -t "${sessionName}" remain-on-exit on`);
 		} catch {
-			// Session may not exist or the binding may not be present.
+			// Session may not exist
 		}
 	}
 

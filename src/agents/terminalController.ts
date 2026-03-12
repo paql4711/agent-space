@@ -19,6 +19,7 @@ export class TerminalController implements vscode.Disposable {
 	private terminals = new Map<string, vscode.Terminal>();
 	private terminalMetadata = new Map<vscode.Terminal, TerminalMetadata>();
 	private disposables: vscode.Disposable[] = [];
+	private reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 	constructor(
 		private readonly projectManager: ProjectManager,
@@ -85,8 +86,6 @@ export class TerminalController implements vscode.Disposable {
 			return undefined;
 		}
 
-		this.tmux.configureSession(sessionName);
-
 		const { shellPath, shellArgs } = getTerminalShellArgs(sessionName);
 
 		const terminal = vscode.window.createTerminal({
@@ -125,9 +124,6 @@ export class TerminalController implements vscode.Disposable {
 	): vscode.Terminal | undefined {
 		const existing = this.terminals.get(agent.id);
 		if (existing) {
-			const sessionName =
-				agent.tmuxSession ?? this.tmux.sessionName(feature.id, agent.id);
-			this.tmux.configureSession(sessionName);
 			existing.show();
 			return existing;
 		}
@@ -138,10 +134,9 @@ export class TerminalController implements vscode.Disposable {
 		feature: Feature,
 		service: Service,
 		cwd: string,
-	): vscode.Terminal {
+	): vscode.Terminal | undefined {
 		const existing = this.terminals.get(service.id);
 		if (existing) {
-			this.tmux.configureServiceSession(service.tmuxSession);
 			existing.show();
 			return existing;
 		}
@@ -152,19 +147,27 @@ export class TerminalController implements vscode.Disposable {
 		_feature: Feature,
 		service: Service,
 		cwd: string,
-	): vscode.Terminal {
+	): vscode.Terminal | undefined {
 		const name = `svc: ${service.name}`;
 		const sessionName = service.tmuxSession;
+		let sessionReady = this.tmux.isSessionAlive(sessionName);
 
-		if (!this.tmux.isSessionAlive(sessionName)) {
+		if (!sessionReady) {
 			try {
 				exec(this.resolveServiceStartCommand(service), { cwd });
+				this.tmux.configureServiceSession(sessionName);
+				sessionReady = this.tmux.isSessionAlive(sessionName);
 			} catch (err) {
 				console.warn(`[TerminalController] service tmux create failed: ${err}`);
 			}
 		}
 
-		this.tmux.configureServiceSession(sessionName);
+		if (!sessionReady) {
+			void vscode.window.showErrorMessage(
+				`Failed to start service "${service.name}". Check that the command runs in ${cwd}.`,
+			);
+			return undefined;
+		}
 
 		const { shellPath, shellArgs } = getTerminalShellArgs(sessionName);
 
@@ -312,6 +315,22 @@ export class TerminalController implements vscode.Disposable {
 	}
 
 	reconnectTmuxSessions(feature: Feature): void {
+		// Debounce per feature to avoid duplicate reconnections from rapid
+		// sidebar visibility changes and feature activation events
+		const existing = this.reconnectTimers.get(feature.id);
+		if (existing) {
+			clearTimeout(existing);
+		}
+		this.reconnectTimers.set(
+			feature.id,
+			setTimeout(() => {
+				this.reconnectTimers.delete(feature.id);
+				this.doReconnectTmuxSessions(feature);
+			}, 150),
+		);
+	}
+
+	private doReconnectTmuxSessions(feature: Feature): void {
 		const ctx = this.projectManager.findContextByFeatureId(feature.id);
 		if (!ctx) return;
 
@@ -347,9 +366,7 @@ export class TerminalController implements vscode.Disposable {
 
 	private resolveAgentSessionName(featureId: string, agentId: string): string {
 		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		const agent = ctx?.agentManager
-			.getAgents(featureId)
-			.find((candidate) => candidate.id === agentId);
+		const agent = ctx?.agentManager.getAgent(featureId, agentId);
 		return agent?.tmuxSession ?? this.tmux.sessionName(featureId, agentId);
 	}
 

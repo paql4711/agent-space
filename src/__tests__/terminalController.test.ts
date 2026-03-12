@@ -50,8 +50,6 @@ describe("TerminalController", () => {
 		color: "terminal.ansiBlue",
 		isolation: "shared",
 		createdAt: "2026-03-06T00:00:00Z",
-		kind: "feature",
-		managed: "user",
 	};
 
 	const agent: Agent = {
@@ -91,11 +89,13 @@ describe("TerminalController", () => {
 		| ((terminal: {
 				show: ReturnType<typeof vi.fn>;
 				dispose: ReturnType<typeof vi.fn>;
+				hide: ReturnType<typeof vi.fn>;
 		  }) => void)
 		| undefined;
 	let terminalInstance: {
 		show: ReturnType<typeof vi.fn>;
 		dispose: ReturnType<typeof vi.fn>;
+		hide: ReturnType<typeof vi.fn>;
 	};
 
 	beforeEach(() => {
@@ -120,7 +120,7 @@ describe("TerminalController", () => {
 		});
 		buildLaunchCommand.mockReturnValue("claude");
 		buildResumeLaunchCommand.mockReturnValue("claude --resume session-1");
-		terminalInstance = { show: vi.fn(), dispose: vi.fn() };
+		terminalInstance = { show: vi.fn(), dispose: vi.fn(), hide: vi.fn() };
 		createTerminalMock.mockReturnValue(terminalInstance);
 		showErrorMessageMock.mockResolvedValue(undefined);
 	});
@@ -292,11 +292,15 @@ describe("TerminalController", () => {
 			.fn()
 			.mockReturnValue('tmux new-session -d -s "agent-space-svc-f1-svc1"');
 		const configureServiceSession = vi.fn();
+		const serviceSessionAlive = vi
+			.fn()
+			.mockReturnValueOnce(false)
+			.mockReturnValue(true);
 
 		const controller = new TerminalController(
 			{ findContextByFeatureId, notifyChange } as never,
 			{
-				isSessionAlive: vi.fn().mockReturnValue(false),
+				isSessionAlive: serviceSessionAlive,
 				createShellCommand,
 				configureServiceSession,
 				getPaneStatus,
@@ -324,4 +328,40 @@ describe("TerminalController", () => {
 		);
 		expect(createTerminalMock).toHaveBeenCalled();
 	});
+
+	it("does not create a terminal when service tmux session fails to start", () => {
+		const createShellCommand = vi
+			.fn()
+			.mockReturnValue('tmux new-session -d -s "agent-space-svc-f1-svc1"');
+
+		const controller = new TerminalController(
+			{ findContextByFeatureId, notifyChange } as never,
+			{
+				isSessionAlive: vi.fn().mockReturnValue(false),
+				createShellCommand,
+				configureServiceSession: vi.fn(),
+				getPaneStatus,
+			} as never,
+			{
+				resolveAgentTool,
+				buildLaunchCommand,
+				buildResumeLaunchCommand,
+			} as never,
+		);
+
+		vi.mocked(exec).mockReturnValue("");
+
+		const terminal = controller.createServiceTerminal(
+			feature,
+			shellService,
+			"/repo/feature-one",
+		);
+
+		expect(terminal).toBeUndefined();
+		expect(createTerminalMock).not.toHaveBeenCalled();
+		expect(showErrorMessageMock).toHaveBeenCalledWith(
+			expect.stringContaining("Failed to start service"),
+		);
+	});
+
 });

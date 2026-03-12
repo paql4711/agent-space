@@ -28,11 +28,32 @@ describe("TmuxIntegration", () => {
 			const name = tmux.sessionName("feat-1", "agent-1");
 			expect(name).toBe("agent-space-feat-1-agent-1");
 		});
+
+		it("sanitizes colons from feature IDs", () => {
+			const name = tmux.sessionName("base:project-id", "agent-1");
+			expect(name).toBe("agent-space-base_project-id-agent-1");
+		});
+
+		it("sanitizes dots from session names", () => {
+			const name = tmux.sessionName("feat.1", "agent.1");
+			expect(name).toBe("agent-space-feat_1-agent_1");
+		});
+
+		it("sanitizes slashes from branch-based labels", () => {
+			const name = tmux.sessionName("feat/auth-system", "agent-1");
+			expect(name).toBe("agent-space-feat_auth-system-agent-1");
+		});
 	});
 
 	describe("serviceSessionName", () => {
 		it("generates service session names with svc infix", () => {
 			expect(tmux.serviceSessionName("f1", "s1")).toBe("agent-space-svc-f1-s1");
+		});
+
+		it("sanitizes colons from service session names", () => {
+			expect(tmux.serviceSessionName("base:proj-id", "s1")).toBe(
+				"agent-space-svc-base_proj-id-s1",
+			);
 		});
 	});
 
@@ -46,6 +67,12 @@ describe("TmuxIntegration", () => {
 		it("returns the previous service session prefix", () => {
 			expect(tmux.legacyServiceSessionName("f1", "s1")).toBe(
 				"companion-svc-f1-s1",
+			);
+		});
+
+		it("sanitizes colons in legacy names", () => {
+			expect(tmux.legacySessionName("base:proj-id", "a1")).toBe(
+				"companion-base_proj-id-a1",
 			);
 		});
 	});
@@ -92,14 +119,33 @@ describe("TmuxIntegration", () => {
 	// configureSession
 	// -------------------------------------------------------------------
 	describe("configureSession", () => {
-		it("calls exec for session-scoped options without enabling tmux mouse mode", () => {
+		it("disables status bar, enables mouse, and enables native scroll", () => {
+			const fresh = new TmuxIntegration();
 			mockExec.mockReturnValue("");
-			tmux.configureSession("my-session");
-			expect(mockExec).toHaveBeenCalledWith(
-				'tmux set-option -t "my-session" mouse off',
-			);
+			fresh.configureSession("my-session");
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux set-option -t "my-session" status off',
+			);
+			expect(mockExec).toHaveBeenCalledWith(
+				'tmux set-option -t "my-session" mouse on',
+			);
+			expect(mockExec).toHaveBeenCalledWith(
+				"tmux show -sv terminal-overrides",
+			);
+			expect(mockExec).toHaveBeenCalledWith(
+				'tmux set -sa terminal-overrides ",*:smcup@:rmcup@:XM@"',
+			);
+		});
+
+		it("skips override when smcup@ already present", () => {
+			const fresh = new TmuxIntegration();
+			mockExec.mockImplementation((cmd: string) => {
+				if (cmd.includes("show -sv")) return ",*:smcup@:rmcup@:XM@";
+				return "";
+			});
+			fresh.configureSession("my-session");
+			expect(mockExec).not.toHaveBeenCalledWith(
+				'tmux set -sa terminal-overrides ",*:smcup@:rmcup@:XM@"',
 			);
 		});
 
@@ -116,11 +162,9 @@ describe("TmuxIntegration", () => {
 	// -------------------------------------------------------------------
 	describe("configureServiceSession", () => {
 		it("calls configureSession then sets remain-on-exit", () => {
+			const fresh = new TmuxIntegration();
 			mockExec.mockReturnValue("");
-			tmux.configureServiceSession("svc-session");
-			expect(mockExec).toHaveBeenCalledWith(
-				'tmux set-option -t "svc-session" mouse off',
-			);
+			fresh.configureServiceSession("svc-session");
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux set-option -t "svc-session" status off',
 			);
@@ -130,16 +174,16 @@ describe("TmuxIntegration", () => {
 		});
 
 		it("swallows errors for remain-on-exit when session is gone", () => {
-			// configureSession succeeds, but remain-on-exit fails
-			let callCount = 0;
-			mockExec.mockImplementation(() => {
-				callCount++;
-				if (callCount === 3) {
+			const fresh = new TmuxIntegration();
+			mockExec.mockImplementation((cmd: string) => {
+				if (cmd.includes("remain-on-exit")) {
 					throw new Error("no session");
 				}
 				return "";
 			});
-			expect(() => tmux.configureServiceSession("svc-session")).not.toThrow();
+			expect(() =>
+				fresh.configureServiceSession("svc-session"),
+			).not.toThrow();
 		});
 	});
 
