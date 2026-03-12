@@ -3,54 +3,68 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { TERMINAL_COLOR_KEYS } from "../constants/colors";
 import type { Store } from "../storage/store";
-import type { Feature, FeatureStatus, IsolationMode } from "../types";
+import type { Feature, FeatureStatus, GitAwareStatus, IsolationMode } from "../types";
 import { isWorktreePathSafe } from "../utils/worktreeGuard";
+import { computeGitStatus, computeGitStatusAsync } from "./featureGitStatus";
 import { normalizeFeatureName } from "./featureName";
 
 export class FeatureManager {
 	private features: Feature[];
-	private readonly baseFeatureId: string;
+	private cachedBaseBranch: string | undefined;
 
 	constructor(
 		private readonly store: Store,
-		readonly projectId: string,
 		private readonly repoRoot: string,
 		private readonly worktreeBase: string,
-		private readonly baseBranch: string,
 	) {
-		this.baseFeatureId = `base:${projectId}`;
-		this.features = store
-			.loadFeatures()
-			.map((feature) => this.normalizeStoredFeature(feature));
+		this.features = store.loadFeatures();
+	}
+
+	/**
+	 * Synthesize a virtual Feature for the repo root (base branch).
+	 * Not persisted to storage.
+	 */
+	getBaseFeature(projectId: string): Feature {
+		const branch = this.getBaseBranch();
+		return {
+			id: `base:${projectId}`,
+			name: branch,
+			branch,
+			worktreePath: this.repoRoot,
+			status: "active",
+			color: "terminal.ansiBlue",
+			isolation: "shared",
+			createdAt: new Date(0).toISOString(),
+		};
+	}
+
+	private getBaseBranch(): string {
+		if (this.cachedBaseBranch) return this.cachedBaseBranch;
+		try {
+			this.cachedBaseBranch = execSync(
+				"git rev-parse --abbrev-ref HEAD",
+				{
+					cwd: this.repoRoot,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "pipe"],
+				},
+			).trim();
+		} catch {
+			this.cachedBaseBranch = "main";
+		}
+		return this.cachedBaseBranch;
 	}
 
 	reload(): void {
-		this.features = this.store
-			.loadFeatures()
-			.map((feature) => this.normalizeStoredFeature(feature));
+		this.features = this.store.loadFeatures();
 	}
 
 	getFeatures(): Feature[] {
-		return [this.getBaseFeature(), ...this.features];
+		return [...this.features];
 	}
 
 	getFeature(id: string): Feature | undefined {
-		if (id === this.baseFeatureId) {
-			return this.getBaseFeature();
-		}
 		return this.features.find((f) => f.id === id);
-	}
-
-	getBaseBranch(): string {
-		return this.baseBranch;
-	}
-
-	getWorktreeBase(): string {
-		return this.worktreeBase;
-	}
-
-	isBaseFeatureId(id: string): boolean {
-		return id === this.baseFeatureId;
 	}
 
 	createFeature(name: string, isolation: IsolationMode): Feature {
@@ -90,8 +104,6 @@ export class FeatureManager {
 			color: this.pickColor(displayName),
 			isolation,
 			createdAt: new Date().toISOString(),
-			kind: "feature",
-			managed: "user",
 		};
 
 		this.features.push(feature);
@@ -100,7 +112,6 @@ export class FeatureManager {
 	}
 
 	deleteFeature(id: string): void {
-		if (this.isBaseFeatureId(id)) return;
 		const feature = this.features.find((f) => f.id === id);
 		if (!feature) return;
 
@@ -126,7 +137,6 @@ export class FeatureManager {
 	}
 
 	updateFeatureStatus(id: string, status: FeatureStatus): void {
-		if (this.isBaseFeatureId(id)) return;
 		const feature = this.features.find((f) => f.id === id);
 		if (!feature) return;
 		feature.status = status;
@@ -134,34 +144,28 @@ export class FeatureManager {
 	}
 
 	updateFeatureIsolation(id: string, isolation: IsolationMode): void {
-		if (this.isBaseFeatureId(id)) return;
 		const feature = this.features.find((f) => f.id === id);
 		if (!feature) return;
 		feature.isolation = isolation;
 		this.store.saveFeatures(this.features);
 	}
 
-	private getBaseFeature(): Feature {
-		return {
-			id: this.baseFeatureId,
-			name: "Main",
-			branch: this.baseBranch,
-			worktreePath: this.repoRoot,
-			status: "active",
-			color: this.pickColor("Main"),
-			isolation: "shared",
-			createdAt: "",
-			kind: "base",
-			managed: "builtin",
-		};
+	getFeatureGitStatus(feature: Feature): GitAwareStatus {
+		return computeGitStatus({
+			featureBranch: feature.branch,
+			baseBranch: this.getBaseBranch(),
+			worktreePath: feature.worktreePath,
+			repoRoot: this.repoRoot,
+		});
 	}
 
-	private normalizeStoredFeature(feature: Feature): Feature {
-		return {
-			...feature,
-			kind: feature.kind ?? "feature",
-			managed: feature.managed ?? "user",
-		};
+	async getFeatureGitStatusAsync(feature: Feature): Promise<GitAwareStatus> {
+		return computeGitStatusAsync({
+			featureBranch: feature.branch,
+			baseBranch: this.getBaseBranch(),
+			worktreePath: feature.worktreePath,
+			repoRoot: this.repoRoot,
+		});
 	}
 
 	private pickColor(name: string): string {

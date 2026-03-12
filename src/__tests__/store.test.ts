@@ -28,8 +28,6 @@ describe("Store", () => {
 			color: "terminal.ansiBlue",
 			isolation: "shared",
 			createdAt: "2026-03-04T00:00:00Z",
-			kind: "feature",
-			managed: "user",
 		};
 
 		it("saves and loads features", () => {
@@ -137,31 +135,5 @@ describe("Store — services", () => {
 		]);
 		store.saveServices("f1", []);
 		expect(store.loadServices("f1")).toEqual([]);
-	});
-
-	it("round-trips project command settings", () => {
-		store.saveProjectSettings({
-			customCommands: [
-				{
-					id: "cmd-1",
-					label: "CDK Diff",
-					command: "npm run cdk:diff",
-					cwdMode: "repoRoot",
-					group: "git",
-				},
-			],
-		});
-
-		expect(store.loadProjectSettings()).toEqual({
-			customCommands: [
-				{
-					id: "cmd-1",
-					label: "CDK Diff",
-					command: "npm run cdk:diff",
-					cwdMode: "repoRoot",
-					group: "git",
-				},
-			],
-		});
 	});
 });

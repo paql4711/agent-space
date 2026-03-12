@@ -116,6 +116,46 @@ describe("ProjectManager", () => {
 			manager.addProject(tmpDir);
 			expect(manager.findContextByFeatureId("no-such-feature")).toBeUndefined();
 		});
+
+		it("resolves base:<projectId> to the correct project context", () => {
+			const project = manager.addProject(tmpDir);
+			const ctx = manager.findContextByFeatureId(`base:${project.id}`);
+			expect(ctx).toBeDefined();
+			expect(ctx?.project.id).toBe(project.id);
+		});
+
+		it("returns undefined for base: prefix with unknown project id", () => {
+			manager.addProject(tmpDir);
+			expect(
+				manager.findContextByFeatureId("base:nonexistent"),
+			).toBeUndefined();
+		});
+	});
+
+	describe("resolveFeature", () => {
+		it("resolves base:<projectId> to a base feature", () => {
+			const project = manager.addProject(tmpDir);
+			const resolved = manager.resolveFeature(`base:${project.id}`);
+			expect(resolved).toBeDefined();
+			expect(resolved?.feature.id).toBe(`base:${project.id}`);
+			expect(resolved?.feature.worktreePath).toBe(tmpDir);
+			expect(resolved?.ctx.project.id).toBe(project.id);
+		});
+
+		it("returns undefined for unknown feature id", () => {
+			manager.addProject(tmpDir);
+			expect(manager.resolveFeature("no-such-id")).toBeUndefined();
+		});
+	});
+
+	describe("isBaseFeatureId", () => {
+		it("returns true for base: prefix", () => {
+			expect(ProjectManager.isBaseFeatureId("base:abc")).toBe(true);
+		});
+
+		it("returns false for regular feature ids", () => {
+			expect(ProjectManager.isBaseFeatureId("some-uuid")).toBe(false);
+		});
 	});
 
 	describe("initializeContext uses storagePath", () => {

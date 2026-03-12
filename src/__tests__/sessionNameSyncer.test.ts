@@ -53,8 +53,6 @@ describe("SessionNameSyncer", () => {
 		color: "terminal.ansiBlue",
 		isolation: "shared",
 		createdAt: "2026-03-04T00:00:00.000Z",
-		kind: "feature",
-		managed: "user",
 	};
 
 	beforeEach(() => {

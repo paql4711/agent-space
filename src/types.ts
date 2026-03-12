@@ -1,8 +1,7 @@
 export type FeatureStatus = "active" | "done";
+export type GitAwareStatus = "new" | "modified" | "ahead" | "merged";
 export type AgentStatus = "running" | "idle" | "stopped" | "done" | "errored";
 export type IsolationMode = "shared" | "per-agent";
-export type WorkspaceKind = "base" | "feature";
-export type WorkspaceManagedBy = "builtin" | "user";
 
 export interface Feature {
 	id: string;
@@ -13,8 +12,6 @@ export interface Feature {
 	color: string;
 	isolation: IsolationMode;
 	createdAt: string;
-	kind: WorkspaceKind;
-	managed: WorkspaceManagedBy;
 }
 
 export interface CodingTool {
@@ -51,21 +48,6 @@ export interface Project {
 	id: string;
 	name: string;
 	repoPath: string;
-}
-
-export type ProjectCommandGroup = "git" | "app" | "test";
-export type ProjectCommandCwdMode = "workspace" | "repoRoot";
-
-export interface ProjectCommand {
-	id: string;
-	label: string;
-	command: string;
-	cwdMode: ProjectCommandCwdMode;
-	group: ProjectCommandGroup;
-}
-
-export interface ProjectSettings {
-	customCommands: ProjectCommand[];
 }
 
 export type ServiceStatus = "running" | "stopped" | "errored";

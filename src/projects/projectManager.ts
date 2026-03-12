@@ -4,12 +4,10 @@ import { AgentManager } from "../agents/agentManager";
 import type { TerminalController } from "../agents/terminalController";
 import { TmuxIntegration } from "../agents/tmux";
 import { FeatureManager } from "../features/featureManager";
-import { detectBaseBranch } from "../git/baseBranch";
 import { ServiceManager } from "../services/serviceManager";
 import type { GlobalStore } from "../storage/globalStore";
 import { Store } from "../storage/store";
-import type { Project } from "../types";
-import { ProjectCommandManager } from "./projectCommandManager";
+import type { Feature, Project } from "../types";
 
 export interface ProjectContext {
 	project: Project;
@@ -17,11 +15,11 @@ export interface ProjectContext {
 	featureManager: FeatureManager;
 	agentManager: AgentManager;
 	serviceManager: ServiceManager;
-	projectCommandManager: ProjectCommandManager;
 }
 
 export class ProjectManager {
 	private contexts = new Map<string, ProjectContext>();
+	private featureToProject = new Map<string, string>();
 	private onChangeCallbacks: Array<() => void> = [];
 
 	constructor(
@@ -67,6 +65,14 @@ export class ProjectManager {
 	}
 
 	removeProject(projectId: string): void {
+		// Clear reverse index entries for this project's features
+		const ctx = this.contexts.get(projectId);
+		if (ctx) {
+			for (const feature of ctx.featureManager.getFeatures()) {
+				this.featureToProject.delete(feature.id);
+			}
+		}
+
 		const projects = this.getProjects().filter((p) => p.id !== projectId);
 		this.globalStore.saveProjects(projects);
 		this.contexts.delete(projectId);
@@ -82,22 +88,13 @@ export class ProjectManager {
 		// projects.json → reload project list
 		if (parts.length === 1 && parts[0] === "projects.json") {
 			this.contexts.clear();
+			this.featureToProject.clear();
 			this.notifyChange();
 			return;
 		}
 
 		// preferences.json → just notify (HomePanel re-reads on refresh)
 		if (parts.length === 1 && parts[0] === "preferences.json") {
-			this.notifyChange();
-			return;
-		}
-
-		// projects/{id}/project.json → reload project-level metadata
-		if (
-			parts.length === 3 &&
-			parts[0] === "projects" &&
-			parts[2] === "project.json"
-		) {
 			this.notifyChange();
 			return;
 		}
@@ -167,12 +164,53 @@ export class ProjectManager {
 	}
 
 	findContextByFeatureId(featureId: string): ProjectContext | undefined {
+		if (featureId.startsWith("base:")) {
+			const projectId = featureId.slice("base:".length);
+			return this.getContext(projectId);
+		}
+
+		// Fast path: O(1) lookup via reverse index
+		const projectId = this.featureToProject.get(featureId);
+		if (projectId) {
+			const ctx = this.getContext(projectId);
+			if (ctx?.featureManager.getFeature(featureId)) {
+				return ctx;
+			}
+			// Index was stale — remove and fall through
+			this.featureToProject.delete(featureId);
+		}
+
+		// Slow path: linear scan (populates index on hit)
 		for (const ctx of this.getAllContexts()) {
 			if (ctx.featureManager.getFeature(featureId)) {
+				this.featureToProject.set(featureId, ctx.project.id);
 				return ctx;
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * Resolve a featureId (regular or `base:<projectId>`) to its context and Feature object.
+	 */
+	resolveFeature(
+		featureId: string,
+	): { ctx: ProjectContext; feature: Feature } | undefined {
+		const ctx = this.findContextByFeatureId(featureId);
+		if (!ctx) return undefined;
+
+		if (featureId.startsWith("base:")) {
+			const feature = ctx.featureManager.getBaseFeature(ctx.project.id);
+			return { ctx, feature };
+		}
+
+		const feature = ctx.featureManager.getFeature(featureId);
+		if (!feature) return undefined;
+		return { ctx, feature };
+	}
+
+	static isBaseFeatureId(featureId: string): boolean {
+		return featureId.startsWith("base:");
 	}
 
 	// ── Internal ─────────────────────────────────────────
@@ -184,13 +222,10 @@ export class ProjectManager {
 			project.repoPath,
 			this.worktreeRelativePath,
 		);
-		const baseBranch = detectBaseBranch(project.repoPath);
 		const featureManager = new FeatureManager(
 			store,
-			project.id,
 			project.repoPath,
 			worktreeBase,
-			baseBranch,
 		);
 		const agentManager = new AgentManager(
 			store,
@@ -198,16 +233,14 @@ export class ProjectManager {
 			worktreeBase,
 			this.tmux,
 		);
-		const serviceManager = new ServiceManager(store, this.tmux);
-		const projectCommandManager = new ProjectCommandManager(store);
-		return {
-			project,
-			store,
-			featureManager,
-			agentManager,
-			serviceManager,
-			projectCommandManager,
-		};
+		const serviceManager = new ServiceManager(store, project.repoPath, this.tmux);
+
+		// Populate reverse index
+		for (const feature of featureManager.getFeatures()) {
+			this.featureToProject.set(feature.id, project.id);
+		}
+
+		return { project, store, featureManager, agentManager, serviceManager };
 	}
 
 	killProjectSessions(

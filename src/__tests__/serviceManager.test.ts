@@ -22,7 +22,7 @@ describe("ServiceManager", () => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "svc-test-"));
 		store = new Store(tmpDir);
 		tmux = new TmuxIntegration();
-		manager = new ServiceManager(store, tmux);
+		manager = new ServiceManager(store, "/repo", tmux);
 	});
 
 	afterEach(() => {
@@ -211,6 +211,41 @@ describe("ServiceManager", () => {
 			manager.refreshStatuses("f1");
 			const services = manager.getServices("f1");
 			expect(services.find((s) => s.id === svc.id)?.status).toBe("stopped");
+		});
+
+		it("skips refresh when called within 5s TTL", () => {
+			manager.createService("f1", "dev", "npm run dev");
+			const aliveSpy = vi.spyOn(tmux, "isSessionAlive").mockReturnValue(true);
+			vi.spyOn(tmux, "getPaneStatus").mockReturnValue({
+				dead: false,
+				exitCode: 0,
+			});
+
+			// First call — should invoke tmux
+			manager.refreshStatuses("f1");
+			const firstCallCount = aliveSpy.mock.calls.length;
+			expect(firstCallCount).toBeGreaterThan(0);
+
+			// Second call within TTL — should skip tmux
+			manager.refreshStatuses("f1");
+			expect(aliveSpy.mock.calls.length).toBe(firstCallCount);
+		});
+
+		it("refreshes again after invalidateFeature clears TTL", () => {
+			manager.createService("f1", "dev", "npm run dev");
+			const aliveSpy = vi.spyOn(tmux, "isSessionAlive").mockReturnValue(true);
+			vi.spyOn(tmux, "getPaneStatus").mockReturnValue({
+				dead: false,
+				exitCode: 0,
+			});
+
+			manager.refreshStatuses("f1");
+			const firstCallCount = aliveSpy.mock.calls.length;
+
+			manager.invalidateFeature("f1");
+
+			manager.refreshStatuses("f1");
+			expect(aliveSpy.mock.calls.length).toBeGreaterThan(firstCallCount);
 		});
 	});
 });

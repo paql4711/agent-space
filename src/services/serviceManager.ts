@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import type { TmuxIntegration } from "../agents/tmux";
 import type { Store } from "../storage/store";
@@ -6,14 +7,19 @@ import { exec } from "../utils/platform";
 
 export class ServiceManager {
 	private servicesByFeature = new Map<string, Service[]>();
+	private cachedDefaultBranch: string | undefined;
+	private lastRefreshTime = new Map<string, number>();
+	private static readonly REFRESH_TTL_MS = 5_000;
 
 	constructor(
 		private readonly store: Store,
+		private readonly repoRoot: string,
 		private readonly tmux: TmuxIntegration,
 	) {}
 
 	invalidateFeature(featureId: string): void {
 		this.servicesByFeature.delete(featureId);
+		this.lastRefreshTime.delete(featureId);
 	}
 
 	getServices(featureId: string): Service[] {
@@ -29,7 +35,10 @@ export class ServiceManager {
 	): Service {
 		const services = this.loadServices(featureId);
 		const id = crypto.randomUUID();
-		const tmuxSession = this.tmux.serviceSessionName(featureId, id);
+		const tmuxSession = this.tmux.serviceSessionName(
+			this.sessionLabel(featureId),
+			id,
+		);
 
 		const service: Service = {
 			id,
@@ -86,6 +95,12 @@ export class ServiceManager {
 	}
 
 	refreshStatuses(featureId: string): void {
+		const lastRefresh = this.lastRefreshTime.get(featureId);
+		if (lastRefresh && Date.now() - lastRefresh < ServiceManager.REFRESH_TTL_MS) {
+			return;
+		}
+		this.lastRefreshTime.set(featureId, Date.now());
+
 		const services = this.loadServices(featureId);
 		let changed = false;
 		for (const service of services) {
@@ -134,10 +149,11 @@ export class ServiceManager {
 		services: Service[],
 	): Service[] {
 		let changed = false;
+		const label = this.sessionLabel(featureId);
 
 		for (const service of services) {
 			const preferredSession = this.tmux.serviceSessionName(
-				featureId,
+				label,
 				service.id,
 			);
 			if (service.tmuxSession === preferredSession) {
@@ -178,5 +194,30 @@ export class ServiceManager {
 			service.tmuxSession,
 			service.launchCommand ?? service.command,
 		);
+	}
+
+	private sessionLabel(featureId: string): string {
+		if (!featureId.startsWith("base:")) {
+			return featureId;
+		}
+		return this.getDefaultBranch();
+	}
+
+	private getDefaultBranch(): string {
+		if (this.cachedDefaultBranch !== undefined) {
+			return this.cachedDefaultBranch;
+		}
+		let branch: string;
+		try {
+			branch = execSync("git rev-parse --abbrev-ref HEAD", {
+				cwd: this.repoRoot,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+		} catch {
+			branch = "main";
+		}
+		this.cachedDefaultBranch = branch;
+		return branch;
 	}
 }

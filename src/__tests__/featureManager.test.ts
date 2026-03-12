@@ -10,9 +10,15 @@ vi.mock("node:child_process", () => ({
 	execSync: vi.fn(),
 }));
 
+vi.mock("../features/featureGitStatus", () => ({
+	computeGitStatus: vi.fn(),
+}));
+
 import { execSync } from "node:child_process";
+import { computeGitStatus } from "../features/featureGitStatus";
 
 const mockExecSync = vi.mocked(execSync);
+const mockComputeGitStatus = vi.mocked(computeGitStatus);
 
 describe("FeatureManager", () => {
 	let tmpDir: string;
@@ -25,10 +31,8 @@ describe("FeatureManager", () => {
 		store = new Store(tmpDir);
 		manager = new FeatureManager(
 			store,
-			"project-1",
 			repoRoot,
 			path.join(repoRoot, ".worktrees"),
-			"main",
 		);
 		mockExecSync.mockReset();
 	});
@@ -97,8 +101,7 @@ describe("FeatureManager", () => {
 
 			manager.deleteFeature(feature.id);
 
-			expect(manager.getFeatures()).toHaveLength(1);
-			expect(manager.getFeatures()[0].kind).toBe("base");
+			expect(manager.getFeatures()).toHaveLength(0);
 			expect(mockExecSync).toHaveBeenCalledWith(
 				expect.stringContaining("git worktree remove"),
 				expect.any(Object),
@@ -112,7 +115,7 @@ describe("FeatureManager", () => {
 			manager.createFeature("a", "shared");
 			manager.createFeature("b", "per-agent");
 
-			expect(manager.getFeatures()).toHaveLength(3);
+			expect(manager.getFeatures()).toHaveLength(2);
 		});
 
 		it("returns single feature by id", () => {
@@ -121,20 +124,6 @@ describe("FeatureManager", () => {
 
 			expect(manager.getFeature(f.id)?.name).toBe("a");
 			expect(manager.getFeature("nonexistent")).toBeUndefined();
-		});
-
-		it("includes a synthetic base workspace", () => {
-			const base = manager.getFeatures()[0];
-			expect(base.kind).toBe("base");
-			expect(base.branch).toBe("main");
-			expect(base.worktreePath).toBe(repoRoot);
-			expect(store.loadFeatures()).toEqual([]);
-		});
-
-		it("does not delete the built-in base workspace", () => {
-			const base = manager.getFeatures()[0];
-			manager.deleteFeature(base.id);
-			expect(manager.getFeatures()[0].id).toBe(base.id);
 		});
 	});
 
@@ -147,6 +136,37 @@ describe("FeatureManager", () => {
 
 			expect(manager.getFeature(f.id)?.status).toBe("done");
 			expect(store.loadFeatures()[0].status).toBe("done");
+		});
+	});
+
+	describe("getBaseFeature", () => {
+		it("returns a feature with base:<projectId> id", () => {
+			const projectId = "test-project-123";
+			mockExecSync.mockReturnValue("main\n");
+			const base = manager.getBaseFeature(projectId);
+			expect(base.id).toBe(`base:${projectId}`);
+			expect(base.branch).toBe("main");
+			expect(base.worktreePath).toBe(repoRoot);
+			expect(base.status).toBe("active");
+			expect(base.isolation).toBe("shared");
+		});
+
+		it("caches the git branch result", () => {
+			mockExecSync.mockReturnValue("develop\n");
+			const base1 = manager.getBaseFeature("p1");
+			const base2 = manager.getBaseFeature("p2");
+			expect(base1.branch).toBe("develop");
+			expect(base2.branch).toBe("develop");
+			// execSync should only be called once for branch detection
+			expect(mockExecSync).toHaveBeenCalledTimes(1);
+		});
+
+		it("falls back to main when git fails", () => {
+			mockExecSync.mockImplementation(() => {
+				throw new Error("not a git repo");
+			});
+			const base = manager.getBaseFeature("p1");
+			expect(base.branch).toBe("main");
 		});
 	});
 
@@ -177,6 +197,40 @@ describe("FeatureManager", () => {
 			manager.updateFeatureIsolation("nonexistent", "per-agent");
 
 			expect(manager.getFeatures()[0].isolation).toBe("shared");
+		});
+	});
+
+	describe("getFeatureGitStatus", () => {
+		it("delegates to computeGitStatus with correct parameters", () => {
+			mockExecSync.mockReturnValue(Buffer.from(""));
+			mockComputeGitStatus.mockReturnValue("ahead");
+			const feature = manager.createFeature("status-test", "shared");
+
+			const result = manager.getFeatureGitStatus(feature);
+
+			expect(result).toBe("ahead");
+			expect(mockComputeGitStatus).toHaveBeenCalledWith({
+				featureBranch: feature.branch,
+				baseBranch: "main",
+				worktreePath: feature.worktreePath,
+				repoRoot: repoRoot,
+			});
+		});
+
+		it("uses cached base branch", () => {
+			mockExecSync.mockReturnValueOnce("develop\n");
+			mockExecSync.mockReturnValue(Buffer.from(""));
+			mockComputeGitStatus.mockReturnValue("new");
+
+			// Trigger base branch detection
+			manager.getBaseFeature("p1");
+
+			const feature = manager.createFeature("test", "shared");
+			manager.getFeatureGitStatus(feature);
+
+			expect(mockComputeGitStatus).toHaveBeenCalledWith(
+				expect.objectContaining({ baseBranch: "develop" }),
+			);
 		});
 	});
 });

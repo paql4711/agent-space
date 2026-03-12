@@ -33,8 +33,6 @@ describe("AgentManager", () => {
 		color: "terminal.ansiBlue",
 		isolation: "shared",
 		createdAt: "2026-03-04T00:00:00Z",
-		kind: "feature",
-		managed: "user",
 	};
 
 	beforeEach(() => {
@@ -277,6 +275,37 @@ describe("AgentManager", () => {
 			manager.createAgent(feature);
 			manager.closeAgent("nonexistent", "f1");
 			expect(manager.getAgents("f1")[0].status).toBe("stopped");
+		});
+	});
+
+	describe("base feature session label", () => {
+		it("resolves base feature IDs to the git default branch", () => {
+			mockExecSync.mockReturnValue(Buffer.from("main\n"));
+
+			const baseFeature: Feature = {
+				...feature,
+				id: "base:project-uuid",
+				branch: "main",
+			};
+			const agent = manager.createAgent(baseFeature);
+
+			// sessionName should have been called with "main" instead of "base:project-uuid"
+			expect(tmux.sessionName).toHaveBeenCalledWith("main", agent.id);
+		});
+
+		it("falls back to 'main' when git rev-parse fails", () => {
+			mockExecSync.mockImplementation(() => {
+				throw new Error("not a git repo");
+			});
+
+			const baseFeature: Feature = {
+				...feature,
+				id: "base:project-uuid",
+				branch: "main",
+			};
+			const agent = manager.createAgent(baseFeature);
+
+			expect(tmux.sessionName).toHaveBeenCalledWith("main", agent.id);
 		});
 	});
 

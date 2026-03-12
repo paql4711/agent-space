@@ -10,6 +10,8 @@ import type { TmuxIntegration } from "./tmux";
 
 export class AgentManager {
 	private agentsByFeature = new Map<string, Agent[]>();
+	private cachedDefaultBranch: string | undefined;
+	private invalidateTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 	constructor(
 		private readonly store: Store,
@@ -19,11 +21,35 @@ export class AgentManager {
 	) {}
 
 	invalidateFeature(featureId: string): void {
+		// Debounce: batch rapid invalidation calls (e.g. file watcher events)
+		if (this.invalidateTimers.has(featureId)) {
+			clearTimeout(this.invalidateTimers.get(featureId));
+		}
+		this.invalidateTimers.set(
+			featureId,
+			setTimeout(() => {
+				this.agentsByFeature.delete(featureId);
+				this.invalidateTimers.delete(featureId);
+			}, 100),
+		);
+	}
+
+	/** Immediately invalidate without debounce. Used by tests and direct mutations. */
+	invalidateFeatureImmediate(featureId: string): void {
+		const timer = this.invalidateTimers.get(featureId);
+		if (timer) {
+			clearTimeout(timer);
+			this.invalidateTimers.delete(featureId);
+		}
 		this.agentsByFeature.delete(featureId);
 	}
 
 	getAgents(featureId: string): Agent[] {
 		return [...this.loadAgents(featureId)];
+	}
+
+	getAgent(featureId: string, agentId: string): Agent | undefined {
+		return this.loadAgents(featureId).find((a) => a.id === agentId);
 	}
 
 	createAgent(feature: Feature, toolId?: string): Agent {
@@ -56,7 +82,7 @@ export class AgentManager {
 			featureId: feature.id,
 			name,
 			sessionId,
-			tmuxSession: this.tmux.sessionName(feature.id, id),
+			tmuxSession: this.tmux.sessionName(this.sessionLabel(feature.id), id),
 			worktreePath,
 			toolId,
 			status: "stopped",
@@ -238,9 +264,10 @@ export class AgentManager {
 
 	private normalizeAgentSessions(featureId: string, agents: Agent[]): Agent[] {
 		let changed = false;
+		const label = this.sessionLabel(featureId);
 
 		for (const agent of agents) {
-			const preferredSession = this.tmux.sessionName(featureId, agent.id);
+			const preferredSession = this.tmux.sessionName(label, agent.id);
 			const currentSession =
 				agent.tmuxSession ?? this.tmux.legacySessionName(featureId, agent.id);
 
@@ -300,5 +327,35 @@ export class AgentManager {
 
 	private nextDefaultName(agents: Agent[]): string {
 		return `Agent ${agents.length + 1}`;
+	}
+
+	/**
+	 * Map a featureId to a tmux-friendly label. For `base:<projectId>` features
+	 * this returns the repo's checked-out branch name (e.g. "main"); for regular
+	 * features the featureId is returned as-is.
+	 */
+	private sessionLabel(featureId: string): string {
+		if (!featureId.startsWith("base:")) {
+			return featureId;
+		}
+		return this.getDefaultBranch();
+	}
+
+	private getDefaultBranch(): string {
+		if (this.cachedDefaultBranch !== undefined) {
+			return this.cachedDefaultBranch;
+		}
+		let branch: string;
+		try {
+			branch = execSync("git rev-parse --abbrev-ref HEAD", {
+				cwd: this.repoRoot,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+		} catch {
+			branch = "main";
+		}
+		this.cachedDefaultBranch = branch;
+		return branch;
 	}
 }
