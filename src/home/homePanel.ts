@@ -1,9 +1,9 @@
-import { execSync } from "node:child_process";
 import * as vscode from "vscode";
 import type { CodingToolRegistry } from "../agents/codingToolRegistry";
 import type { TerminalController } from "../agents/terminalController";
 import type { TmuxIntegration } from "../agents/tmux";
 import { TERMINAL_COLOR_HEX, TERMINAL_COLOR_MAP } from "../constants/colors";
+import { ICON_GIT } from "../constants/icons";
 import type { ProjectManager } from "../projects/projectManager";
 import type { GlobalStore } from "../storage/globalStore";
 import type { Agent, Feature, Service } from "../types";
@@ -117,10 +117,6 @@ export class HomePanel {
 		callback: (state: { active: boolean; visible: boolean }) => void,
 	): void {
 		this.onViewStateChangeCallback = callback;
-		callback({
-			active: this.panel.active,
-			visible: this.panel.visible,
-		});
 	}
 
 	public showWelcome(): void {
@@ -133,12 +129,11 @@ export class HomePanel {
 	public showFeature(featureId: string): void {
 		this.currentFeatureId = featureId;
 		this.globalStore.setPreference("lastActiveFeatureId", featureId);
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		const feature = ctx?.featureManager.getFeature(featureId);
-		this.panel.title = feature
-			? `Agent Space: ${this.workspaceLabel(feature)}`
+		const resolved = this.projectManager.resolveFeature(featureId);
+		this.panel.title = resolved
+			? `Agent Space: ${resolved.feature.branch}`
 			: "Agent Space";
-		this.panel.reveal(vscode.ViewColumn.One, false);
+		this.panel.reveal(vscode.ViewColumn.One, true);
 		this.startGitPolling();
 		this.panel.webview.html = this.getFeatureHtml(featureId);
 	}
@@ -160,8 +155,7 @@ export class HomePanel {
 	}
 
 	private isFeatureValid(featureId: string): boolean {
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		return ctx?.featureManager.getFeature(featureId) !== undefined;
+		return this.projectManager.resolveFeature(featureId) !== undefined;
 	}
 
 	private dispose(): void {
@@ -177,9 +171,9 @@ export class HomePanel {
 	private startGitPolling(): void {
 		this.stopGitPolling();
 		this.refreshTimer = setInterval(() => {
-			this.sendGitStats();
+			this.sendGitStatsAsync().catch(() => {});
 		}, 15_000);
-		this.sendGitStats();
+		this.sendGitStatsAsync().catch(() => {});
 	}
 
 	private stopGitPolling(): void {
@@ -270,10 +264,10 @@ export class HomePanel {
 			case "createPR":
 				run("agentSpace.createPR", message.featureId);
 				break;
-			case "openFolder":
-				run("agentSpace.openFeatureFolder", message.featureId);
+			case "openGitView":
+				run("agentSpace.openFeatureGitView", message.featureId);
 				break;
-			case "deleteFeature":
+				case "deleteFeature":
 				run("agentSpace.deleteFeature", message.featureId);
 				break;
 			case "syncNames":
@@ -326,10 +320,9 @@ export class HomePanel {
 	}
 
 	private handleRestartService(featureId: string, serviceId: string): void {
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		ctx.serviceManager.restartService(
 			serviceId,
 			featureId,
@@ -341,12 +334,11 @@ export class HomePanel {
 	// -- Terminal focus -------------------------------------------
 	private focusAgentTerminal(agentId: string): void {
 		if (!this.terminalController || !this.currentFeatureId) return;
-		const ctx = this.projectManager.findContextByFeatureId(
+		const resolved = this.projectManager.resolveFeature(
 			this.currentFeatureId,
 		);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(this.currentFeatureId);
-		if (!feature) return;
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		const agents = ctx.agentManager.getAgents(this.currentFeatureId);
 		const agent = agents.find((a) => a.id === agentId);
 		if (!agent) return;
@@ -361,10 +353,9 @@ export class HomePanel {
 
 	private focusServiceTerminal(featureId: string, serviceId: string): void {
 		if (!this.terminalController) return;
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		const services = ctx.serviceManager.getServices(featureId);
 		const service = services.find((s) => s.id === serviceId);
 		if (!service) return;
@@ -510,16 +501,14 @@ export class HomePanel {
 	}
 
 	// -- Git stats ------------------------------------------------
-	private sendGitStats(): void {
+	private async sendGitStatsAsync(): Promise<void> {
 		if (!this.currentFeatureId) return;
-		const ctx = this.projectManager.findContextByFeatureId(
+		const resolved = this.projectManager.resolveFeature(
 			this.currentFeatureId,
 		);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(this.currentFeatureId);
-		if (!feature) return;
+		if (!resolved) return;
 
-		const stats = this.getGitDiffStats(feature);
+		const stats = await this.getGitDiffStatsAsync(resolved.feature);
 		if (!stats) return;
 
 		this.panel.webview.postMessage({
@@ -528,43 +517,63 @@ export class HomePanel {
 		});
 	}
 
-	private getGitDiffStats(feature: Feature): GitStats | null {
+	private async getGitDiffStatsAsync(feature: Feature): Promise<GitStats | null> {
+		const { execAsync } = await import("../utils/platform");
 		try {
 			let diffStat: string;
 			try {
-				diffStat =
-					feature.kind === "base"
-						? execSync("git diff --stat HEAD", {
-								cwd: feature.worktreePath,
-								encoding: "utf-8",
-								stdio: ["ignore", "pipe", "ignore"],
-							}).trim()
-						: execSync(`git diff --stat HEAD...${feature.branch}`, {
-								cwd: feature.worktreePath,
-								encoding: "utf-8",
-								stdio: ["ignore", "pipe", "ignore"],
-							}).trim();
-			} catch {
-				diffStat = execSync("git diff --stat HEAD", {
+				const result = await execAsync(`git diff --stat HEAD...${feature.branch}`, {
 					cwd: feature.worktreePath,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "ignore"],
-				}).trim();
+				});
+				diffStat = result.stdout.trim();
+			} catch {
+				const result = await execAsync("git diff --stat HEAD", {
+					cwd: feature.worktreePath,
+				});
+				diffStat = result.stdout.trim();
 			}
 
-			const summaryMatch = diffStat.match(
-				/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/,
-			);
-
-			return {
-				filesChanged: summaryMatch ? Number(summaryMatch[1]) : 0,
-				insertions: summaryMatch ? Number(summaryMatch[2] ?? 0) : 0,
-				deletions: summaryMatch ? Number(summaryMatch[3] ?? 0) : 0,
-				raw: diffStat,
-			};
+			return this.parseDiffStat(diffStat);
 		} catch {
 			return null;
 		}
+	}
+
+	private getGitDiffStats(feature: Feature): GitStats | null {
+		const { execSync } = require("node:child_process");
+		try {
+			let diffStat: string;
+			try {
+				diffStat = (execSync(`git diff --stat HEAD...${feature.branch}`, {
+					cwd: feature.worktreePath,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "ignore"],
+				}) as string).trim();
+			} catch {
+				diffStat = (execSync("git diff --stat HEAD", {
+					cwd: feature.worktreePath,
+					encoding: "utf-8",
+					stdio: ["ignore", "pipe", "ignore"],
+				}) as string).trim();
+			}
+
+			return this.parseDiffStat(diffStat);
+		} catch {
+			return null;
+		}
+	}
+
+	private parseDiffStat(diffStat: string): GitStats {
+		const summaryMatch = diffStat.match(
+			/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/,
+		);
+
+		return {
+			filesChanged: summaryMatch ? Number(summaryMatch[1]) : 0,
+			insertions: summaryMatch ? Number(summaryMatch[2] ?? 0) : 0,
+			deletions: summaryMatch ? Number(summaryMatch[3] ?? 0) : 0,
+			raw: diffStat,
+		};
 	}
 
 	private renderGitStatsContent(stats: GitStats): string {
@@ -597,7 +606,7 @@ export class HomePanel {
 
 		const contexts = this.projectManager.getAllContexts();
 
-		// Gather all workspaces across all projects
+		// Gather all features across all projects
 		const allFeatures: Array<{
 			feature: Feature;
 			projectName: string;
@@ -606,6 +615,20 @@ export class HomePanel {
 			serviceCount: number;
 		}> = [];
 		for (const ctx of contexts) {
+			// Include synthetic base feature (repo root / base branch)
+			const baseFeature = ctx.featureManager.getBaseFeature(ctx.project.id);
+			const baseAgentCount = ctx.agentManager.getAgents(baseFeature.id).length;
+			const baseServiceCount = ctx.serviceManager.getServices(baseFeature.id).length;
+			if (baseAgentCount > 0 || baseServiceCount > 0) {
+				allFeatures.push({
+					feature: baseFeature,
+					projectName: ctx.project.name,
+					projectId: ctx.project.id,
+					agentCount: baseAgentCount,
+					serviceCount: baseServiceCount,
+				});
+			}
+
 			const features = ctx.featureManager.getFeatures();
 			for (const f of features) {
 				allFeatures.push({
@@ -617,14 +640,8 @@ export class HomePanel {
 				});
 			}
 		}
-		// Sort: base workspaces first within a project grouping, then active first.
+		// Sort: active first, then by creation date desc
 		allFeatures.sort((a, b) => {
-			if (a.projectId !== b.projectId) {
-				return a.projectName.localeCompare(b.projectName);
-			}
-			if (a.feature.kind !== b.feature.kind) {
-				return a.feature.kind === "base" ? -1 : 1;
-			}
 			if (a.feature.status !== b.feature.status) {
 				return a.feature.status === "active" ? -1 : 1;
 			}
@@ -636,10 +653,10 @@ export class HomePanel {
 		let body: string;
 		if (projects.length === 0) {
 			body = `
-					<div class="welcome-container">
+			<div class="welcome-container">
 				<div class="welcome-header">
 					<div class="welcome-title">Agent Space</div>
-					<div class="welcome-subtitle">Your workspaces at a glance</div>
+					<div class="welcome-subtitle">Your features at a glance</div>
 				</div>
 				<div class="empty-welcome">
 					<div class="empty-welcome-title">No projects yet</div>
@@ -668,7 +685,7 @@ export class HomePanel {
 						<div class="feature-resume-card" onclick="resumeFeature('${f.id}')">
 							<div class="feature-card-top">
 								<div class="feature-card-color" style="background: ${dotColor}"></div>
-								<div class="feature-card-name">${this.escapeHtml(this.workspaceLabel(f))}</div>
+								<div class="feature-card-name">${this.escapeHtml(f.branch)}</div>
 								<span class="feature-card-status ${f.status}">${f.status === "done" ? "Done" : "Active"}</span>
 							</div>
 							<div class="feature-card-meta">
@@ -679,7 +696,7 @@ export class HomePanel {
 						</div>`;
 							})
 							.join("")
-					: '<div class="empty-welcome"><div class="empty-welcome-text">No workspaces yet. Create one to get started.</div></div>';
+					: '<div class="empty-welcome"><div class="empty-welcome-text">No features yet. Create one to get started.</div></div>';
 
 			const projectRows = contexts
 				.map((ctx) => {
@@ -700,7 +717,7 @@ export class HomePanel {
 			<div class="welcome-container">
 				<div class="welcome-header">
 					<div class="welcome-title">Agent Space</div>
-					<div class="welcome-subtitle">Your workspaces at a glance</div>
+					<div class="welcome-subtitle">Your features at a glance</div>
 				</div>
 				<div class="quick-actions-row">
 					<button class="action-btn" onclick="newFeature('${newFeatureProjectId}')">
@@ -710,14 +727,14 @@ export class HomePanel {
 						${ICON_FOLDER} Add Project
 					</button>
 				</div>
-				<div class="section-label">Workspaces</div>
+				<div class="section-label">Features</div>
 				<div class="feature-grid">
 					${featureCards}
 				</div>
 				<div class="section-label">Projects</div>
 				<table class="projects-table">
 					<thead>
-						<tr><th>Name</th><th>Path</th><th>Workspaces</th></tr>
+						<tr><th>Name</th><th>Path</th><th>Features</th></tr>
 					</thead>
 					<tbody>${projectRows}</tbody>
 				</table>
@@ -740,12 +757,10 @@ export class HomePanel {
 	}
 
 	private getFeatureHtml(featureId: string): string {
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return this.emptyHtml("Feature not found");
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (!resolved) return this.emptyHtml("Feature not found");
 
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return this.emptyHtml("Workspace not found");
-
+		const { ctx, feature } = resolved;
 		const agents = ctx.agentManager.getAgents(featureId);
 		const services = ctx.serviceManager.getServices(featureId);
 		const dotColor = TERMINAL_COLOR_MAP[feature.color] || "#569cd6";
@@ -775,15 +790,15 @@ export class HomePanel {
 			<div class="header-color-dot" style="background: ${dotColor}"></div>
 			<div class="header-info">
 				<div class="header-title">${this.escapeHtml(feature.name)}</div>
-				<div class="header-branch">${this.escapeHtml(this.workspaceLabel(feature))}</div>
+				<div class="header-branch">${this.escapeHtml(feature.branch)}</div>
 			</div>
 			<span class="header-status ${feature.status}">${feature.status === "done" ? "Done" : "Active"}</span>
 			<div class="header-actions">
 				<button class="header-action-btn" onclick="quickAction('refresh', '${feature.id}')" title="Refresh">
 					${ICON_REFRESH}
 				</button>
-				<button class="header-action-btn" onclick="quickAction('openFolder', '${feature.id}')" title="Open Folder">
-					${ICON_FOLDER}
+				<button class="header-action-btn" onclick="quickAction('openGitView', '${feature.id}')" title="Open Workspace">
+					${ICON_GIT}
 				</button>
 			</div>
 		</div>
@@ -1036,8 +1051,9 @@ export class HomePanel {
 	): string {
 		const projectSections = contexts
 			.map((ctx) => {
-				const featureSections = ctx.featureManager
-					.getFeatures()
+				const baseFeature = ctx.featureManager.getBaseFeature(ctx.project.id);
+				const allFeatures = [baseFeature, ...ctx.featureManager.getFeatures()];
+				const featureSections = allFeatures
 					.map((feature) => {
 						return this.renderTmuxFeatureGroup(
 							feature,
@@ -1088,7 +1104,7 @@ export class HomePanel {
 			<div class="section-label">Tmux Sessions</div>
 			${
 				featureGroup ??
-				'<div class="tmux-empty-state">No managed tmux sessions for this workspace.</div>'
+				'<div class="tmux-empty-state">No managed tmux sessions for this feature.</div>'
 			}
 		</div>`;
 	}
@@ -1125,11 +1141,11 @@ export class HomePanel {
 			<div class="tmux-feature-header">
 				<div>
 					<div class="tmux-feature-name">${this.escapeHtml(feature.name)}</div>
-					<div class="tmux-feature-branch">${this.escapeHtml(this.workspaceLabel(feature))}</div>
+					<div class="tmux-feature-branch">${this.escapeHtml(feature.branch)}</div>
 				</div>
 				<div class="tmux-feature-actions">
 					<span class="tmux-count-badge">${liveRows.length} session${liveRows.length === 1 ? "" : "s"}</span>
-					<button class="quick-action-btn danger subtle" onclick="killFeatureSessions('${feature.id}')">Kill Workspace Sessions</button>
+					<button class="quick-action-btn danger subtle" onclick="killFeatureSessions('${feature.id}')">Kill Feature Sessions</button>
 					${
 						projectId
 							? `<button class="quick-action-btn subtle" onclick="resumeFeature('${feature.id}')">Open</button>`
@@ -1138,7 +1154,7 @@ export class HomePanel {
 				</div>
 			</div>
 			<div class="tmux-session-list">
-				${liveRows.length > 0 ? liveRows.join("") : '<div class="tmux-empty-state">No live tmux sessions for this workspace.</div>'}
+				${liveRows.length > 0 ? liveRows.join("") : '<div class="tmux-empty-state">No live tmux sessions for this feature.</div>'}
 			</div>
 			${inactiveSection}
 		</div>`;
@@ -1258,15 +1274,14 @@ export class HomePanel {
 					${ICON_PLUS} Add Agent
 				</button>
 				<button class="quick-action-btn" onclick="quickAction('addService', '${feature.id}')">
-					${ICON_SERVER} Run Actions
+					${ICON_SERVER} Add Service
 				</button>
-				${
-					feature.kind === "feature"
-						? `<button class="quick-action-btn" onclick="quickAction('createPR', '${feature.id}')">
+				<button class="quick-action-btn" onclick="quickAction('createPR', '${feature.id}')">
 					${ICON_PR} Create PR
-				</button>`
-						: ""
-				}
+				</button>
+				<button class="quick-action-btn" onclick="quickAction('openGitView', '${feature.id}')">
+					${ICON_GIT} Open Workspace
+				</button>
 				<button class="quick-action-btn" onclick="quickAction('syncNames', '${feature.id}')">
 					${ICON_SYNC} Sync Names
 				</button>
@@ -1277,23 +1292,10 @@ export class HomePanel {
 	private renderFeatureActions(feature: Feature): string {
 		return `
 		<div class="feature-actions-section">
-			<button class="quick-action-btn" onclick="quickAction('openFolder', '${feature.id}')">
-				${ICON_FOLDER} Open Folder
+			<button class="quick-action-btn danger" onclick="deleteFeature('${feature.id}')">
+				Delete Feature
 			</button>
-			${
-				feature.kind === "feature"
-					? `<button class="quick-action-btn danger" onclick="deleteFeature('${feature.id}')">
-				Delete Workspace
-			</button>`
-					: ""
-			}
 		</div>`;
-	}
-
-	private workspaceLabel(feature: Feature): string {
-		return feature.kind === "base"
-			? `${feature.name} (${feature.branch})`
-			: feature.branch;
 	}
 
 	private emptyHtml(message: string): string {

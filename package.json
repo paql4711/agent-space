@@ -2,7 +2,7 @@
 	"name": "agent-space",
 	"displayName": "Agent Space",
 	"publisher": "paql4711",
-	"description": "Run coding CLI workflows per workspace with isolated Git worktrees and persistent sessions in VS Code",
+	"description": "Run any coding CLI per feature with isolated Git worktrees and persistent sessions in VS Code",
 	"version": "0.4.0",
 	"icon": "media/marketplace/icon.png",
 	"license": "MIT",
@@ -57,7 +57,7 @@
 			"agentSpace": [
 				{
 					"id": "agentSpace.features",
-					"name": "Workspaces",
+					"name": "Features",
 					"type": "webview"
 				}
 			]
@@ -71,12 +71,12 @@
 			},
 			{
 				"command": "agentSpace.selectFeature",
-				"title": "Select Workspace",
+				"title": "Select Feature",
 				"category": "Agent Space"
 			},
 			{
 				"command": "agentSpace.deleteFeature",
-				"title": "Delete Workspace",
+				"title": "Delete Feature",
 				"category": "Agent Space",
 				"icon": "$(trash)"
 			},
@@ -94,15 +94,9 @@
 			},
 			{
 				"command": "agentSpace.addService",
-				"title": "Run Workspace Action",
+				"title": "Add Service",
 				"category": "Agent Space",
 				"icon": "$(server-process)"
-			},
-			{
-				"command": "agentSpace.openFeatureFolder",
-				"title": "Open in File Explorer",
-				"category": "Agent Space",
-				"icon": "$(folder-opened)"
 			},
 			{
 				"command": "agentSpace.openFeatureGitView",
@@ -132,40 +126,9 @@
 			},
 			{
 				"command": "agentSpace.openWorkspace",
-				"title": "Open Workspace Home",
+				"title": "Open Feature Home",
 				"category": "Agent Space",
 				"icon": "$(window)"
-			},
-			{
-				"command": "agentSpace.openMainWorkspace",
-				"title": "Open Main Workspace",
-				"category": "Agent Space",
-				"icon": "$(git-branch)"
-			},
-			{
-				"command": "agentSpace.addProjectCommand",
-				"title": "Add Project Command",
-				"category": "Agent Space"
-			},
-			{
-				"command": "agentSpace.removeProjectCommand",
-				"title": "Remove Project Command",
-				"category": "Agent Space"
-			},
-			{
-				"command": "agentSpace.syncBaseBranch",
-				"title": "Sync Base Branch",
-				"category": "Agent Space"
-			},
-			{
-				"command": "agentSpace.rebaseOntoBase",
-				"title": "Rebase Onto Base",
-				"category": "Agent Space"
-			},
-			{
-				"command": "agentSpace.mergeIntoBranch",
-				"title": "Merge Into Selected Branch",
-				"category": "Agent Space"
 			},
 			{
 				"command": "agentSpace.openHome",
@@ -187,7 +150,7 @@
 					"group": "1_actions@2"
 				},
 				{
-					"command": "agentSpace.openFeatureFolder",
+					"command": "agentSpace.openFeatureGitView",
 					"when": "viewItem == featureActive || viewItem == featureDone",
 					"group": "1_actions@3"
 				},
@@ -198,6 +161,11 @@
 				},
 				{
 					"command": "agentSpace.addAgent",
+					"when": "viewItem == featureActive",
+					"group": "inline"
+				},
+				{
+					"command": "agentSpace.openFeatureGitView",
 					"when": "viewItem == featureActive",
 					"group": "inline"
 				},

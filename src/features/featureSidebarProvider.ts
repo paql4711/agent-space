@@ -9,22 +9,34 @@ import {
 	ICON_CHEVRON_DOWN,
 	ICON_CHEVRON_RIGHT,
 	ICON_DELETE,
+	ICON_GIT,
 	ICON_REMOVE,
 	ICON_RESTART,
 	ICON_STOP,
 	ICON_SYNC,
 } from "../constants/icons";
-import type {
-	ProjectContext,
+import {
 	ProjectManager,
+	type ProjectContext,
 } from "../projects/projectManager";
 import type { ServiceManager } from "../services/serviceManager";
-import type { Feature } from "../types";
+import type { Agent, Feature, GitAwareStatus, Service } from "../types";
+import type { FeatureManager } from "./featureManager";
+
+function gitStatusLabel(status: GitAwareStatus): string {
+	switch (status) {
+		case "new": return "New";
+		case "modified": return "Modified";
+		case "ahead": return "Ahead";
+		case "merged": return "Merged";
+	}
+}
 
 export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = "agentSpace.features";
 	private _view?: vscode.WebviewView;
 	private _onVisibilityChange?: (visible: boolean) => void;
+	private _pollingTimer?: ReturnType<typeof setInterval>;
 
 	private terminalController?: TerminalController;
 
@@ -41,9 +53,6 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 
 	onVisibilityChange(callback: (visible: boolean) => void): void {
 		this._onVisibilityChange = callback;
-		if (this._view) {
-			callback(this._view.visible);
-		}
 	}
 
 	resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -57,8 +66,14 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.html = this.getHtml();
 
 		webviewView.onDidChangeVisibility(() => {
+			if (webviewView.visible) {
+				this.startPolling();
+			} else {
+				this.stopPolling();
+			}
 			this._onVisibilityChange?.(webviewView.visible);
 		});
+		this.startPolling();
 
 		webviewView.webview.onDidReceiveMessage((message) => {
 			const run = (cmd: string, ...args: unknown[]) => {
@@ -110,6 +125,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				case "reopenAgent":
 					run("agentSpace.reopenAgent", message.featureId, message.agentId);
 					break;
+				case "deleteAgent":
+					run("agentSpace.deleteAgent", message.featureId, message.agentId);
+					break;
 				case "focusAgent":
 					this.handleFocusAgent(message.featureId, message.agentId);
 					break;
@@ -119,18 +137,128 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				case "openWorkspace":
 					run("agentSpace.openWorkspace", message.featureId);
 					break;
+				case "openGitView":
+					run("agentSpace.openFeatureGitView", message.featureId);
+					break;
+				case "requestFullRefresh":
+					this.refresh();
+					break;
 			}
 		});
 	}
 
+	/** Full HTML rebuild — used for initial load and structural changes (feature create/delete). */
 	refresh(): void {
+		this.refreshAsync().catch(() => {});
+	}
+
+	private async refreshAsync(): Promise<void> {
 		try {
+			if (!this._view) return;
+
+			// Pre-compute all git statuses in parallel
+			const contexts = this.projectManager.getAllContexts();
+			const statusMap = new Map<string, import("../types").GitAwareStatus>();
+
+			const tasks: Promise<void>[] = [];
+			for (const ctx of contexts) {
+				for (const feature of ctx.featureManager.getFeatures()) {
+					tasks.push(
+						ctx.featureManager.getFeatureGitStatusAsync(feature).then((status) => {
+							statusMap.set(feature.id, status);
+						}),
+					);
+				}
+			}
+			await Promise.all(tasks);
+
 			if (this._view) {
-				this._view.webview.html = this.getHtml();
+				this._view.webview.html = this.getHtml(statusMap);
 			}
 		} catch {
 			// Webview may have been disposed; swallow to prevent cascade
 		}
+	}
+
+	/** Lightweight incremental update — sends JSON data via postMessage so the webview
+	 *  can update DOM in-place without rebuilding the entire HTML tree. */
+	private async sendUpdate(): Promise<void> {
+		try {
+			if (!this._view?.webview) return;
+
+			const contexts = this.projectManager.getAllContexts();
+			const statusMap = new Map<string, import("../types").GitAwareStatus>();
+
+			const asyncTasks: Promise<void>[] = [];
+			for (const ctx of contexts) {
+				for (const feature of ctx.featureManager.getFeatures()) {
+					asyncTasks.push(
+						ctx.featureManager.getFeatureGitStatusAsync(feature).then((s) => {
+							statusMap.set(feature.id, s);
+						}),
+					);
+				}
+			}
+			await Promise.all(asyncTasks);
+
+			interface SidebarAgent { id: string; name: string; status: string; toolId?: string; lastError?: string }
+			interface SidebarService { id: string; name: string; command: string; status: string }
+			interface SidebarFeature { id: string; branch: string; gitStatus?: string; isBase: boolean; agents: SidebarAgent[]; services: SidebarService[] }
+			interface SidebarProject { id: string; name: string; features: SidebarFeature[] }
+
+			const projects: SidebarProject[] = contexts.map((ctx) => {
+				const baseFeature = ctx.featureManager.getBaseFeature(ctx.project.id);
+				const baseAgents = ctx.agentManager.getAgents(baseFeature.id);
+				const baseServices = ctx.serviceManager.getServices(baseFeature.id);
+
+				const features: SidebarFeature[] = [
+					{
+						id: baseFeature.id,
+						branch: baseFeature.branch,
+						isBase: true,
+						agents: baseAgents.map((a) => ({ id: a.id, name: a.name, status: a.status, toolId: a.toolId, lastError: a.lastError })),
+						services: baseServices.map((s) => ({ id: s.id, name: s.name, command: s.command, status: s.status })),
+					},
+				];
+
+				for (const feature of ctx.featureManager.getFeatures()) {
+					const agents = ctx.agentManager.getAgents(feature.id);
+					const services = ctx.serviceManager.getServices(feature.id);
+					features.push({
+						id: feature.id,
+						branch: feature.branch,
+						gitStatus: statusMap.get(feature.id),
+						isBase: false,
+						agents: agents.map((a) => ({ id: a.id, name: a.name, status: a.status, toolId: a.toolId, lastError: a.lastError })),
+						services: services.map((s) => ({ id: s.id, name: s.name, command: s.command, status: s.status })),
+					});
+				}
+
+				return { id: ctx.project.id, name: ctx.project.name, features };
+			});
+
+			this._view.webview.postMessage({ type: "sidebarUpdate", data: { projects } });
+		} catch {
+			// Webview may have been disposed
+		}
+	}
+
+	startPolling(): void {
+		this.stopPolling();
+		this._pollingTimer = setInterval(() => {
+			this.sendUpdate().catch(() => {});
+		}, 15_000);
+	}
+
+	stopPolling(): void {
+		if (this._pollingTimer) {
+			clearInterval(this._pollingTimer);
+			this._pollingTimer = undefined;
+		}
+	}
+
+	dispose(): void {
+		this.stopPolling();
 	}
 
 	private handleStopService(featureId: string, serviceId: string): void {
@@ -150,10 +278,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 	}
 
 	private handleRestartService(featureId: string, serviceId: string): void {
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		ctx.serviceManager.restartService(
 			serviceId,
 			featureId,
@@ -183,8 +310,8 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		ctx.agentManager.renameAgent(agentId, featureId, newName.trim());
 
 		// Re-create the VS Code terminal tab with the new name
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (this.terminalController && feature) {
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (this.terminalController && resolved) {
 			const updatedAgent = ctx.agentManager
 				.getAgents(featureId)
 				.find((a) => a.id === agentId);
@@ -193,7 +320,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 					.getAgents(featureId)
 					.findIndex((a) => a.id === agentId);
 				this.terminalController.renameTerminal(
-					feature,
+					resolved.feature,
 					updatedAgent,
 					agentIndex,
 				);
@@ -205,10 +332,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 
 	private handleFocusAgent(featureId: string, agentId: string): void {
 		if (!this.terminalController) return;
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		const agents = ctx.agentManager.getAgents(featureId);
 		const agent = agents.find((a) => a.id === agentId);
 		if (!agent) return;
@@ -223,10 +349,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 
 	private handleFocusService(featureId: string, serviceId: string): void {
 		if (!this.terminalController) return;
-		const ctx = this.projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
+		const resolved = this.projectManager.resolveFeature(featureId);
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		const services = ctx.serviceManager.getServices(featureId);
 		const service = services.find((s) => s.id === serviceId);
 		if (!service) return;
@@ -237,7 +362,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		);
 	}
 
-	private getHtml(): string {
+	private getHtml(statusMap?: Map<string, import("../types").GitAwareStatus>): string {
 		const webview = this._view?.webview;
 		if (!webview) return "";
 		const cssUri = webview.asWebviewUri(
@@ -260,7 +385,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				</div>`;
 		} else {
 			const sections = contexts
-				.map((ctx) => this.renderProjectSection(ctx))
+				.map((ctx) => this.renderProjectSection(ctx, statusMap))
 				.join("");
 			body = `
 				<button class="btn-secondary" onclick="send('addProject')">Add Project</button>
@@ -280,23 +405,26 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		<button class="context-menu-item" id="menuRename">Rename Agent</button>
         <div class="context-separator"></div>
 		<button class="context-menu-item" id="menuMarkDone">Mark as Done</button>
+		<button class="context-menu-item menu-danger" id="menuDeleteAgent">Delete Agent</button>
 	</div>
 	<script src="${jsUri}"></script>
 </body>
 </html>`;
 	}
 
-	private renderProjectSection(ctx: ProjectContext): string {
+	private renderProjectSection(ctx: ProjectContext, statusMap?: Map<string, import("../types").GitAwareStatus>): string {
 		const { project } = ctx;
-		const features = [...ctx.featureManager.getFeatures()].sort((a, b) => {
-			if (a.kind !== b.kind) {
-				return a.kind === "base" ? -1 : 1;
-			}
-			return b.createdAt.localeCompare(a.createdAt);
-		});
+		const baseFeature = ctx.featureManager.getBaseFeature(project.id);
+		const baseCard = this.renderBaseCard(
+			baseFeature,
+			ctx.agentManager,
+			ctx.serviceManager,
+		);
+
+		const features = ctx.featureManager.getFeatures();
 		const featureCards = features
 			.map((f) =>
-				this.renderFeatureCard(f, ctx.agentManager, ctx.serviceManager),
+				this.renderFeatureCard(f, ctx.agentManager, ctx.serviceManager, ctx.featureManager, statusMap),
 			)
 			.join("");
 
@@ -312,7 +440,38 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				<button class="btn-primary" onclick="newFeature(event, '${project.id}')">
                     <span>+</span> New Feature
                 </button>
-				${featureCards || '<div class="empty-placeholder">No workspaces yet</div>'}
+				${baseCard}
+				${featureCards || '<div class="empty-placeholder">No features yet</div>'}
+			</div>
+		</div>`;
+	}
+
+	private renderBaseCard(
+		feature: Feature,
+		agentManager: AgentManager,
+		serviceManager: ServiceManager,
+	): string {
+		const agents = agentManager.getAgents(feature.id);
+		const services = serviceManager.getServices(feature.id);
+		const totalCount = agents.filter((a) => a.status !== "done").length + services.filter((s) => s.status === "running").length;
+
+		const bodyHtml = this.renderCardBody(feature, agents, services);
+
+		return `
+		<div class="feature-card base-card" data-feature-id="${feature.id}" onclick="selectFeature('${feature.id}')">
+			<div class="card-header" onclick="toggleFeatureCard(event, '${feature.id}')">
+				<span class="card-chevron" id="card-chevron-${feature.id}">${ICON_CHEVRON_DOWN}</span>
+				<span class="feature-name">${this.escapeHtml(feature.branch)}</span>
+				<span class="base-label">base</span>
+				<span class="collapse-count" id="collapse-count-${feature.id}">${totalCount > 0 ? totalCount : ""}</span>
+			</div>
+			<div class="feature-card-body" id="card-body-${feature.id}">
+				${bodyHtml}
+				<div class="feature-quick-actions">
+					<button class="action-btn" onclick="addAgent(event, '${feature.id}')" title="Add Agent">${ICON_ADD_AGENT}</button>
+					<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
+					<button class="action-btn" onclick="openGitView(event, '${feature.id}')" title="Open Workspace">${ICON_GIT}</button>
+				</div>
 			</div>
 		</div>`;
 	}
@@ -321,14 +480,53 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		feature: Feature,
 		agentManager: AgentManager,
 		serviceManager: ServiceManager,
+		featureManager: FeatureManager,
+		statusMap?: Map<string, import("../types").GitAwareStatus>,
 	): string {
 		const agents = agentManager.getAgents(feature.id);
+		const services = serviceManager.getServices(feature.id);
+		const totalCount = agents.filter((a) => a.status !== "done").length + services.filter((s) => s.status === "running").length;
+
+		const gitStatus = statusMap?.get(feature.id) ?? featureManager.getFeatureGitStatus(feature);
+		const bodyHtml = this.renderCardBody(feature, agents, services);
+
+		return `
+		<div class="feature-card" data-feature-id="${feature.id}" onclick="selectFeature('${feature.id}')">
+			<div class="card-header" onclick="toggleFeatureCard(event, '${feature.id}')">
+				<span class="card-chevron" id="card-chevron-${feature.id}">${ICON_CHEVRON_DOWN}</span>
+				<span class="feature-name">${this.escapeHtml(feature.branch)}</span>
+				<span class="status-badge status-${gitStatus}" data-status-badge="${feature.id}">${gitStatusLabel(gitStatus)}</span>
+				<span class="collapse-count" id="collapse-count-${feature.id}">${totalCount > 0 ? totalCount : ""}</span>
+				<button class="delete-btn" onclick="deleteFeature(event, '${feature.id}')" title="Delete Feature">${ICON_DELETE}</button>
+			</div>
+			<div class="feature-card-body" id="card-body-${feature.id}">
+				${bodyHtml}
+				<div class="feature-quick-actions">
+					<button class="action-btn" onclick="addAgent(event, '${feature.id}')" title="Add Agent">${ICON_ADD_AGENT}</button>
+					<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
+					<button class="action-btn" onclick="openGitView(event, '${feature.id}')" title="Open Workspace">${ICON_GIT}</button>
+				</div>
+			</div>
+		</div>`;
+	}
+
+	private renderCardBody(
+		feature: Feature,
+		agents: Agent[],
+		services: Service[],
+	): string {
+		const agentsHtml = this.renderAgentsSection(feature, agents);
+		const servicesHtml = this.renderServicesSection(feature, services);
+		return `${agentsHtml}${servicesHtml}`;
+	}
+
+	private renderAgentsSection(feature: Feature, agents: Agent[]): string {
 		const defaultToolId = this.toolRegistry.getDefaultToolId();
 
 		const activeAgents = agents.filter((a) => a.status !== "done");
 		const doneAgents = agents.filter((a) => a.status === "done");
 
-		const renderAgentCard = (a: (typeof agents)[number], i: number) => {
+		const renderAgentCard = (a: Agent, i: number) => {
 			const tool = this.toolRegistry.resolveAgentTool(a.toolId);
 			const toolLabel =
 				tool.id !== defaultToolId
@@ -346,7 +544,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				: "";
 
 			return `
-		<div class="agent-card ${statusClass}"
+		<div class="agent-card ${statusClass}" data-agent-id="${a.id}"
 			onclick="focusAgent(event, '${feature.id}', '${a.id}')"
 			oncontextmenu="showAgentMenu(event, '${feature.id}', '${a.id}')">
             <div class="agent-color-bar" style="background-color: ${agentColor}"></div>
@@ -369,11 +567,12 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 					const i = agents.indexOf(a);
 					const agentColor = TERMINAL_COLOR_HEX[i % TERMINAL_COLOR_HEX.length];
 					return `
-		<div class="agent-card done" oncontextmenu="showAgentMenu(event, '${feature.id}', '${a.id}')">
+		<div class="agent-card done" data-agent-id="${a.id}" oncontextmenu="showAgentMenu(event, '${feature.id}', '${a.id}')">
             <div class="agent-color-bar" style="background-color: ${agentColor}"></div>
             <div class="status-dot done"></div>
 			<span class="agent-name">${this.escapeHtml(a.name)}</span>
 			<button class="action-btn" onclick="reopenAgent(event, '${feature.id}', '${a.id}')" title="Re-enable agent">${ICON_RESTART}</button>
+			<button class="action-btn agent-delete-btn" onclick="deleteAgent(event, '${feature.id}', '${a.id}')" title="Delete agent">${ICON_DELETE}</button>
 		</div>`;
 				})
 				.join("");
@@ -388,7 +587,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		</div>`;
 		}
 
-		const agentsHtml = `
+		return `
     <div class="section-header">
         <span class="section-label">Agents</span>
         ${activeAgents.length > 0 ? `<span class="agent-count">${activeAgents.length}</span>` : ""}
@@ -398,15 +597,19 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
         ${activeCards || '<div class="empty-placeholder">Click + to add an agent</div>'}
     </div>
 	${disabledHtml}`;
+	}
 
-		const services = serviceManager.getServices(feature.id);
-		let servicesHtml = "";
-		if (services.length > 0) {
-			const activeServices = services.filter((s) => s.status === "running");
-			const stoppedServices = services.filter((s) => s.status !== "running");
+	private renderServicesSection(
+		feature: Feature,
+		services: Service[],
+	): string {
+		if (services.length === 0) return "";
 
-			const renderServiceCard = (s: (typeof services)[number]) => `
-			<div class="service-card ${s.status}" onclick="focusService(event, '${feature.id}', '${s.id}')">
+		const activeServices = services.filter((s) => s.status === "running");
+		const stoppedServices = services.filter((s) => s.status !== "running");
+
+		const renderServiceCard = (s: Service) => `
+			<div class="service-card ${s.status}" data-service-id="${s.id}" onclick="focusService(event, '${feature.id}', '${s.id}')">
 				<div class="service-header">
 					<span class="service-name" title="${this.escapeHtml(s.command)}">${this.escapeHtml(s.name)}</span>
                     <div class="service-actions">
@@ -420,12 +623,12 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 				<div class="service-command">${this.escapeHtml(s.command)}</div>
 			</div>`;
 
-			const activeServiceCards = activeServices.map(renderServiceCard).join("");
+		const activeServiceCards = activeServices.map(renderServiceCard).join("");
 
-			let stoppedServicesHtml = "";
-			if (stoppedServices.length > 0) {
-				const stoppedCards = stoppedServices.map(renderServiceCard).join("");
-				stoppedServicesHtml = `
+		let stoppedServicesHtml = "";
+		if (stoppedServices.length > 0) {
+			const stoppedCards = stoppedServices.map(renderServiceCard).join("");
+			stoppedServicesHtml = `
 		<div class="disabled-header collapsed" onclick="toggleStoppedServices(event, '${feature.id}')">
 			<span class="disabled-icon" id="stopped-svc-toggle-${feature.id}">${ICON_CHEVRON_RIGHT}</span>
 			<span>${stoppedServices.length} stopped</span>
@@ -433,40 +636,14 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		<div class="disabled-list collapsed" id="stopped-svc-list-${feature.id}">
 			${stoppedCards}
 		</div>`;
-			}
+		}
 
-			servicesHtml = `
+		return `
 		<div class="services-section">
 			<div class="section-header"><span class="section-label">Services</span></div>
 			<div class="service-list">${activeServiceCards || '<div class="empty-placeholder">No running services</div>'}</div>
 			${stoppedServicesHtml}
 		</div>`;
-		}
-
-		return `
-		<div class="feature-card" onclick="selectFeature('${feature.id}')">
-			<div class="card-header">
-				<span class="feature-name">${this.escapeHtml(this.workspaceLabel(feature))}</span>
-				<span class="status-badge status-${feature.status}">${feature.status === "done" ? "Done" : "Active"}</span>
-				${
-					feature.kind === "feature"
-						? `<button class="delete-btn" onclick="deleteFeature(event, '${feature.id}')" title="Delete Workspace">${ICON_DELETE}</button>`
-						: ""
-				}
-			</div>
-			${agentsHtml}
-			${servicesHtml}
-			<div class="feature-quick-actions">
-				<button class="action-btn" onclick="addAgent(event, '${feature.id}')" title="Add Agent">${ICON_ADD_AGENT}</button>
-				<button class="action-btn" onclick="addService(event, '${feature.id}')" title="Add Service">${ICON_ADD_SERVICE}</button>
-			</div>
-		</div>`;
-	}
-
-	private workspaceLabel(feature: Feature): string {
-		return feature.kind === "base"
-			? `${feature.name} (${feature.branch})`
-			: feature.branch;
 	}
 
 	private escapeHtml(text: string): string {

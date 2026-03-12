@@ -1,42 +1,56 @@
 import * as vscode from "vscode";
 
-type TabsSettingScope =
-	| vscode.ConfigurationTarget.Global
-	| vscode.ConfigurationTarget.Workspace
-	| vscode.ConfigurationTarget.WorkspaceFolder;
+const DEBOUNCE_MS = 50;
 
-interface TabsSettingSnapshot {
-	target: TabsSettingScope;
-	value: unknown;
-}
-
-export class AgentWorkspaceIsolation {
+export class ContextOnlyIsolation {
 	private active = false;
-	private tabsSetting?: TabsSettingSnapshot;
-	private editorLayout?: unknown;
-	private panelWasVisible = false;
+	private debounceTimer?: ReturnType<typeof setTimeout>;
+	private pendingAction?: "enter" | "leave";
 
 	public isActive(): boolean {
 		return this.active;
 	}
 
+	public scheduleEnter(): void {
+		this.cancelPending();
+		this.pendingAction = "enter";
+		this.debounceTimer = setTimeout(() => {
+			this.pendingAction = undefined;
+			void this.enter();
+		}, DEBOUNCE_MS);
+	}
+
+	public scheduleLeave(options?: {
+		guard?: () => boolean;
+	}): void {
+		this.cancelPending();
+		this.pendingAction = "leave";
+		this.debounceTimer = setTimeout(() => {
+			this.pendingAction = undefined;
+			if (options?.guard && !options.guard()) {
+				return;
+			}
+			void this.leave();
+		}, DEBOUNCE_MS);
+	}
+
+	public getPendingAction(): "enter" | "leave" | undefined {
+		return this.pendingAction;
+	}
+
 	public async enter(): Promise<void> {
+		this.cancelPending();
 		if (this.active) {
 			return;
 		}
 
-		this.tabsSetting = this.captureTabsSetting();
-		this.editorLayout = await vscode.commands.executeCommand<unknown>(
-			"vscode.getEditorLayout",
+		await vscode.commands.executeCommand(
+			"setContext",
+			"agentSpace.agentMode",
+			true,
 		);
-		this.panelWasVisible =
-			(await this.readContextKey<boolean>("panelVisible")) ?? false;
-
-		await this.updateTabsSetting("none", this.tabsSetting.target);
-		await vscode.commands.executeCommand("workbench.action.closePanel");
-		await vscode.commands.executeCommand("workbench.action.editorLayoutSingle");
-
 		this.active = true;
+		this.cancelPending();
 	}
 
 	public async leave(): Promise<void> {
@@ -45,67 +59,21 @@ export class AgentWorkspaceIsolation {
 		}
 
 		try {
-			if (this.editorLayout !== undefined) {
-				await vscode.commands.executeCommand(
-					"vscode.setEditorLayout",
-					this.editorLayout,
-				);
-			}
-			if (this.tabsSetting) {
-				await this.updateTabsSetting(
-					this.tabsSetting.value,
-					this.tabsSetting.target,
-				);
-			}
-			if (this.panelWasVisible) {
-				await vscode.commands.executeCommand("workbench.action.togglePanel");
-			}
+			await vscode.commands.executeCommand(
+				"setContext",
+				"agentSpace.agentMode",
+				false,
+			);
 		} finally {
 			this.active = false;
-			this.tabsSetting = undefined;
-			this.editorLayout = undefined;
-			this.panelWasVisible = false;
 		}
 	}
 
-	private captureTabsSetting(): TabsSettingSnapshot {
-		const config = vscode.workspace.getConfiguration("workbench.editor");
-		const inspection = config.inspect<unknown>("showTabs");
-
-		if (inspection?.workspaceFolderValue !== undefined) {
-			return {
-				target: vscode.ConfigurationTarget.WorkspaceFolder,
-				value: inspection.workspaceFolderValue,
-			};
-		}
-
-		if (inspection?.workspaceValue !== undefined) {
-			return {
-				target: vscode.ConfigurationTarget.Workspace,
-				value: inspection.workspaceValue,
-			};
-		}
-
-		return {
-			target: vscode.ConfigurationTarget.Global,
-			value: inspection?.globalValue,
-		};
-	}
-
-	private async updateTabsSetting(
-		value: unknown,
-		target: TabsSettingScope,
-	): Promise<void> {
-		await vscode.workspace
-			.getConfiguration("workbench.editor")
-			.update("showTabs", value, target);
-	}
-
-	private async readContextKey<T>(key: string): Promise<T | undefined> {
-		try {
-			return await vscode.commands.executeCommand<T>("getContextKeyValue", key);
-		} catch {
-			return undefined;
+	public cancelPending(): void {
+		if (this.debounceTimer !== undefined) {
+			clearTimeout(this.debounceTimer);
+			this.debounceTimer = undefined;
+			this.pendingAction = undefined;
 		}
 	}
 }

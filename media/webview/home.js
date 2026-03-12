@@ -127,10 +127,10 @@ function quickAction(action, featureId) {
 		case "createPR":
 			send("createPR", { featureId });
 			break;
-		case "openFolder":
-			send("openFolder", { featureId });
+		case "openGitView":
+			send("openGitView", { featureId });
 			break;
-		case "syncNames":
+			case "syncNames":
 			send("syncNames");
 			break;
 		case "refresh":
@@ -246,19 +246,31 @@ window.addEventListener("message", (event) => {
 	}
 });
 
+// -- Debounced send for high-frequency polling commands ------
+const _debouncedTimers = {};
+function sendDebounced(command, data, delay) {
+	if (_debouncedTimers[command]) {
+		clearTimeout(_debouncedTimers[command]);
+	}
+	_debouncedTimers[command] = setTimeout(() => {
+		delete _debouncedTimers[command];
+		send(command, data);
+	}, delay);
+}
+
 // -- Auto-refresh for expanded agents ------------------------
 function startAutoRefresh() {
 	if (autoRefreshInterval) return;
 	autoRefreshInterval = setInterval(() => {
 		if (expandedAgents.size > 0) {
-			send("refreshActivity", { agentIds: Array.from(expandedAgents) });
+			sendDebounced("refreshActivity", { agentIds: Array.from(expandedAgents) }, 200);
 		}
 		if (expandedServices.size > 0) {
-			send("refreshServiceActivity", {
+			sendDebounced("refreshServiceActivity", {
 				serviceIds: Array.from(expandedServices),
-			});
+			}, 200);
 		}
-	}, 5000);
+	}, 10000);
 }
 
 startAutoRefresh();

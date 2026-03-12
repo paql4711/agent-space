@@ -52,7 +52,7 @@ button {
 	justify-content: center;
 	gap: 6px;
 	width: 100%;
-	margin-top: 8px;
+	margin-bottom: 8px;
 }
 
 .btn-primary:hover {
@@ -200,6 +200,26 @@ button {
 	color: var(--vscode-descriptionForeground);
 }
 
+.status-new {
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+
+.status-modified {
+	background-color: var(--vscode-gitDecoration-modifiedResourceForeground);
+	color: var(--vscode-editor-background);
+}
+
+.status-ahead {
+	background-color: var(--vscode-testing-iconPassed);
+	color: var(--vscode-editor-background);
+}
+
+.status-merged {
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-descriptionForeground);
+}
+
 .delete-btn {
 	display: flex;
 	align-items: center;
@@ -222,6 +242,63 @@ button {
 .delete-btn:hover {
 	background-color: var(--vscode-toolbar-hoverBackground);
 	color: var(--vscode-errorForeground);
+}
+
+/* Base card */
+.base-card {
+	border-color: var(--vscode-panel-border);
+}
+
+.base-label {
+	font-size: 9px;
+	padding: 1px 5px;
+	border-radius: 8px;
+	text-transform: uppercase;
+	font-weight: 600;
+	letter-spacing: 0.5px;
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-descriptionForeground);
+	margin-right: 4px;
+}
+
+/* Card chevron toggle */
+.card-chevron {
+	display: flex;
+	align-items: center;
+	margin-right: 6px;
+	transition: transform 0.2s ease;
+	flex-shrink: 0;
+}
+
+.card-chevron.rotated {
+	transform: rotate(-90deg);
+}
+
+/* Collapsible card body */
+.feature-card-body {
+	display: block;
+}
+
+.feature-card-body.collapsed {
+	display: none;
+}
+
+/* Collapse count badge (shown when collapsed) */
+.collapse-count {
+	font-size: 9px;
+	padding: 1px 5px;
+	border-radius: 8px;
+	min-width: 16px;
+	text-align: center;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	display: none;
+	margin-left: auto;
+	margin-right: 4px;
+}
+
+.collapse-count.visible {
+	display: inline-block;
 }
 
 /* card-details removed — sidebar is now compact navigator */
@@ -313,7 +390,8 @@ button {
 .status-dot.running {
 	background-color: var(--vscode-testing-iconPassed);
 	box-shadow: 0 0 0 0 rgba(106, 153, 85, 0.7);
-	animation: pulse-green 2s infinite;
+	animation: pulse-green 2s ease-in-out 3;
+	will-change: opacity;
 }
 
 .status-dot.stopped {
@@ -330,17 +408,11 @@ button {
 }
 
 @keyframes pulse-green {
-	0% {
-		transform: scale(0.95);
-		box-shadow: 0 0 0 0 rgba(106, 153, 85, 0.7);
+	0%, 100% {
+		opacity: 1;
 	}
-	70% {
-		transform: scale(1);
-		box-shadow: 0 0 0 4px rgba(106, 153, 85, 0);
-	}
-	100% {
-		transform: scale(0.95);
-		box-shadow: 0 0 0 0 rgba(106, 153, 85, 0);
+	50% {
+		opacity: 0.4;
 	}
 }
 
@@ -422,6 +494,19 @@ button {
 
 .agent-card.done:hover {
 	opacity: 1;
+}
+
+.agent-delete-btn {
+	opacity: 0;
+	transition: opacity 0.1s, color 0.1s;
+}
+
+.agent-card:hover .agent-delete-btn {
+	opacity: 1;
+}
+
+.agent-delete-btn:hover {
+	color: var(--vscode-errorForeground);
 }
 
 .services-section {

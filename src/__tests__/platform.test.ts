@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // import() of the platform module picks up these mocks.
 vi.mock("node:child_process", () => ({
 	execSync: vi.fn(),
+	exec: vi.fn(),
 }));
 
 vi.mock("node:fs", () => ({
@@ -21,6 +22,7 @@ const mockExistsSync = vi.mocked(existsSync);
 async function loadPlatform() {
 	const mod = await import("../utils/platform");
 	mod._resetBashCache();
+	mod._resetCommandExistsCache();
 	return mod;
 }
 

@@ -70,10 +70,19 @@ export function _resetBashCache(): void {
 // Command existence check
 // ---------------------------------------------------------------------------
 
+const commandExistsCache = new Map<string, boolean>();
+
 export function commandExists(command: string): boolean {
 	if (/[^a-zA-Z0-9._-]/.test(command)) {
 		return false;
 	}
+
+	const cached = commandExistsCache.get(command);
+	if (cached !== undefined) {
+		return cached;
+	}
+
+	let exists = false;
 
 	// On Windows, check inside Git Bash first (tmux lives in MSYS2's PATH,
 	// not on the system PATH visible to cmd.exe / "where").
@@ -85,22 +94,34 @@ export function commandExists(command: string): boolean {
 					shell: bashPath,
 					stdio: ["ignore", "pipe", "ignore"],
 				});
-				return true;
+				exists = true;
 			} catch {
 				// Not found in Git Bash — fall through to "where" check
 			}
 		}
 	}
 
-	const check = isWindows() ? "where" : "which";
-	try {
-		execSync(`${check} ${command}`, {
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return true;
-	} catch {
-		return false;
+	if (!exists) {
+		const check = isWindows() ? "where" : "which";
+		try {
+			execSync(`${check} ${command}`, {
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			exists = true;
+		} catch {
+			exists = false;
+		}
 	}
+
+	commandExistsCache.set(command, exists);
+	return exists;
+}
+
+/**
+ * Reset the cached command existence results. Intended for testing only.
+ */
+export function _resetCommandExistsCache(): void {
+	commandExistsCache.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +156,70 @@ export function exec(cmd: string, opts?: { cwd?: string }): string {
 export function execSilent(cmd: string, opts?: { cwd?: string }): boolean {
 	try {
 		exec(cmd, opts);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Async exec helpers
+// ---------------------------------------------------------------------------
+
+type ExecPromiseFn = (cmd: string, opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr: string }>;
+let _execPromise: ExecPromiseFn | undefined;
+
+function getExecPromise(): ExecPromiseFn {
+	if (!_execPromise) {
+		// Lazy init to avoid breaking test mocks that don't include exec
+		// biome-ignore lint/style/noVar: require needed for lazy loading
+		const { exec: cpExec } = require("node:child_process");
+		// biome-ignore lint/style/noVar: require needed for lazy loading
+		const { promisify } = require("node:util");
+		_execPromise = promisify(cpExec) as ExecPromiseFn;
+	}
+	return _execPromise;
+}
+
+export interface ExecAsyncResult {
+	stdout: string;
+	stderr: string;
+}
+
+export function getExecAsyncOptions(cwd?: string): Record<string, unknown> {
+	const opts: Record<string, unknown> = {
+		encoding: "utf-8",
+		timeout: 30_000,
+	};
+
+	if (isWindows()) {
+		const bashPath = findGitBash();
+		if (bashPath) {
+			opts.shell = bashPath;
+		}
+	}
+
+	if (cwd) {
+		opts.cwd = cwd;
+	}
+
+	return opts;
+}
+
+export function execAsync(
+	cmd: string,
+	opts?: { cwd?: string } & Record<string, unknown>,
+): Promise<ExecAsyncResult> {
+	const mergedOpts = { ...getExecAsyncOptions(opts?.cwd), ...opts };
+	return getExecPromise()(cmd, mergedOpts);
+}
+
+export async function execAsyncSilent(
+	cmd: string,
+	opts?: { cwd?: string },
+): Promise<boolean> {
+	try {
+		await execAsync(cmd, opts);
 		return true;
 	} catch {
 		return false;

@@ -28,6 +28,11 @@ function addService(e, id) {
 	send("addService", { featureId: id });
 }
 
+function openGitView(e, id) {
+	e.stopPropagation();
+	send("openGitView", { featureId: id });
+}
+
 function syncNames(e) {
 	e.stopPropagation();
 	send("syncNames");
@@ -56,6 +61,11 @@ function reopenAgent(e, featureId, agentId) {
 function focusAgent(e, featureId, agentId) {
 	e.stopPropagation();
 	send("focusAgent", { featureId: featureId, agentId: agentId });
+}
+
+function deleteAgent(e, featureId, agentId) {
+	e.stopPropagation();
+	send("deleteAgent", { featureId: featureId, agentId: agentId });
 }
 
 function toggleDisabled(e, featureId) {
@@ -97,6 +107,12 @@ document.getElementById("menuMarkDone").addEventListener("click", (e) => {
 	send("closeAgent", { featureId: _menuFeatureId, agentId: _menuAgentId });
 });
 
+document.getElementById("menuDeleteAgent").addEventListener("click", (e) => {
+	e.stopPropagation();
+	_agentMenu.classList.remove("visible");
+	send("deleteAgent", { featureId: _menuFeatureId, agentId: _menuAgentId });
+});
+
 function showAgentMenu(e, featureId, agentId) {
 	e.preventDefault();
 	e.stopPropagation();
@@ -108,27 +124,34 @@ function showAgentMenu(e, featureId, agentId) {
 	_menuFeatureId = featureId;
 	_menuAgentId = agentId;
 
+	// Capture click coordinates before any DOM mutations
+	const clickX = e.clientX;
+	const clickY = e.clientY;
+
 	_agentMenu.style.visibility = "hidden";
 	_agentMenu.classList.add("visible");
 	_agentMenu.style.left = "0px";
 	_agentMenu.style.top = "0px";
 
-	const menuWidth = _agentMenu.offsetWidth;
-	const menuHeight = _agentMenu.offsetHeight;
-	const maxLeft = Math.max(
-		MENU_VIEWPORT_GUTTER,
-		window.innerWidth - menuWidth - MENU_VIEWPORT_GUTTER,
-	);
-	const maxTop = Math.max(
-		MENU_VIEWPORT_GUTTER,
-		window.innerHeight - menuHeight - MENU_VIEWPORT_GUTTER,
-	);
-	const left = Math.min(Math.max(e.clientX, MENU_VIEWPORT_GUTTER), maxLeft);
-	const top = Math.min(Math.max(e.clientY, MENU_VIEWPORT_GUTTER), maxTop);
+	// Defer layout reads to next frame to avoid forced synchronous layout
+	requestAnimationFrame(function () {
+		const menuWidth = _agentMenu.offsetWidth;
+		const menuHeight = _agentMenu.offsetHeight;
+		const maxLeft = Math.max(
+			MENU_VIEWPORT_GUTTER,
+			window.innerWidth - menuWidth - MENU_VIEWPORT_GUTTER,
+		);
+		const maxTop = Math.max(
+			MENU_VIEWPORT_GUTTER,
+			window.innerHeight - menuHeight - MENU_VIEWPORT_GUTTER,
+		);
+		const left = Math.min(Math.max(clickX, MENU_VIEWPORT_GUTTER), maxLeft);
+		const top = Math.min(Math.max(clickY, MENU_VIEWPORT_GUTTER), maxTop);
 
-	_agentMenu.style.left = left + "px";
-	_agentMenu.style.top = top + "px";
-	_agentMenu.style.visibility = "";
+		_agentMenu.style.left = left + "px";
+		_agentMenu.style.top = top + "px";
+		_agentMenu.style.visibility = "";
+	});
 }
 
 function closeAllMenus() {
@@ -156,6 +179,23 @@ window.addEventListener("resize", () => {
 	closeAllMenus();
 });
 
+function toggleFeatureCard(e, featureId) {
+	e.stopPropagation();
+	var body = document.getElementById("card-body-" + featureId);
+	var chevron = document.getElementById("card-chevron-" + featureId);
+	var count = document.getElementById("collapse-count-" + featureId);
+	if (body) {
+		var collapsed = !body.classList.contains("collapsed");
+		body.classList.toggle("collapsed");
+		if (chevron) {
+			chevron.classList.toggle("rotated", collapsed);
+		}
+		if (count) {
+			count.classList.toggle("visible", collapsed);
+		}
+	}
+}
+
 function toggleIsolation(e, featureId) {
 	e.stopPropagation();
 	send("toggleIsolation", { featureId: featureId });
@@ -175,3 +215,74 @@ function toggleProject(id) {
 		header.classList.toggle("collapsed");
 	}
 }
+
+// -- Incremental sidebar updates via postMessage ----------------------------
+const STATUS_LABELS = { "new": "New", modified: "Modified", ahead: "Ahead", merged: "Merged" };
+
+window.addEventListener("message", function (event) {
+	var msg = event.data;
+	if (msg.type !== "sidebarUpdate" || !msg.data) return;
+
+	var needsFullRefresh = false;
+	var projects = msg.data.projects;
+
+	for (var p = 0; p < projects.length; p++) {
+		var proj = projects[p];
+		for (var f = 0; f < proj.features.length; f++) {
+			var feat = proj.features[f];
+			var card = document.querySelector('[data-feature-id="' + feat.id + '"]');
+			if (!card) { needsFullRefresh = true; continue; }
+
+			// Update git status badge
+			if (!feat.isBase && feat.gitStatus) {
+				var badge = card.querySelector('[data-status-badge="' + feat.id + '"]');
+				if (badge) {
+					badge.className = "status-badge status-" + feat.gitStatus;
+					badge.textContent = STATUS_LABELS[feat.gitStatus] || feat.gitStatus;
+				}
+			}
+
+			// Update agent status dots
+			for (var a = 0; a < feat.agents.length; a++) {
+				var agent = feat.agents[a];
+				var agentEl = card.querySelector('[data-agent-id="' + agent.id + '"]');
+				if (!agentEl) { needsFullRefresh = true; continue; }
+
+				var dot = agentEl.querySelector(".status-dot");
+				if (dot) {
+					dot.className = "status-dot " + agent.status;
+				}
+
+				// Update card-level status class
+				var statusClass = "idle";
+				if (agent.status === "running") statusClass = "running";
+				if (agent.status === "stopped") statusClass = "stopped";
+				if (agent.status === "done") statusClass = "done";
+				if (agent.status === "errored") statusClass = "errored";
+
+				// Replace status class on agent card
+				agentEl.className = agentEl.className.replace(/\b(idle|running|stopped|done|errored)\b/g, "").trim() + " " + statusClass;
+			}
+
+			// Update service statuses
+			for (var s = 0; s < feat.services.length; s++) {
+				var svc = feat.services[s];
+				var svcEl = card.querySelector('[data-service-id="' + svc.id + '"]');
+				if (!svcEl) { needsFullRefresh = true; continue; }
+				svcEl.className = svcEl.className.replace(/\b(running|stopped|errored)\b/g, "").trim() + " " + svc.status;
+			}
+
+			// Update collapse count
+			var activeCount = feat.agents.filter(function (a) { return a.status !== "done"; }).length
+				+ feat.services.filter(function (s) { return s.status === "running"; }).length;
+			var countEl = document.getElementById("collapse-count-" + feat.id);
+			if (countEl) {
+				countEl.textContent = activeCount > 0 ? String(activeCount) : "";
+			}
+		}
+	}
+
+	if (needsFullRefresh) {
+		send("requestFullRefresh");
+	}
+});

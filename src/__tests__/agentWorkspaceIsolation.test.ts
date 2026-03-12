@@ -1,12 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { executeCommandMock, getConfigurationMock, updateMock } = vi.hoisted(
-	() => ({
-		executeCommandMock: vi.fn(),
-		getConfigurationMock: vi.fn(),
-		updateMock: vi.fn(),
-	}),
-);
+const { executeCommandMock } = vi.hoisted(() => ({
+	executeCommandMock: vi.fn(),
+}));
 
 vi.mock("vscode", () => ({
 	commands: {
@@ -15,120 +11,113 @@ vi.mock("vscode", () => ({
 	window: {
 		terminals: [],
 	},
-	workspace: {
-		getConfiguration: getConfigurationMock,
-	},
-	ConfigurationTarget: {
-		Global: 1,
-		Workspace: 2,
-		WorkspaceFolder: 3,
-	},
 }));
 
-import * as vscode from "vscode";
-import { AgentWorkspaceIsolation } from "../workspace/agentWorkspaceIsolation";
+import { ContextOnlyIsolation } from "../workspace/agentWorkspaceIsolation";
 
-describe("AgentWorkspaceIsolation", () => {
-	const mockedWindow = vscode.window as unknown as { terminals: unknown[] };
-
+describe("ContextOnlyIsolation", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		updateMock.mockResolvedValue(undefined);
-		executeCommandMock.mockImplementation((command: string) => {
-			if (command === "vscode.getEditorLayout") {
-				return Promise.resolve({
-					orientation: 0,
-					groups: [{ size: 1 }],
-				});
-			}
-			if (command === "getContextKeyValue") {
-				return Promise.resolve(false);
-			}
-			return Promise.resolve(undefined);
-		});
-		getConfigurationMock.mockReturnValue({
-			inspect: vi.fn(() => ({
-				globalValue: "multiple",
-			})),
-			update: updateMock,
-		});
-		mockedWindow.terminals = [];
+		vi.useFakeTimers();
+		executeCommandMock.mockResolvedValue(undefined);
 	});
 
-	it("hides tabs and maximizes the editor area on enter", async () => {
-		const isolation = new AgentWorkspaceIsolation();
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("sets agentMode context on enter", async () => {
+		const isolation = new ContextOnlyIsolation();
 
 		await isolation.enter();
 
-		expect(updateMock).toHaveBeenCalledWith(
-			"showTabs",
-			"none",
-			vscode.ConfigurationTarget.Global,
+		expect(executeCommandMock).toHaveBeenCalledWith(
+			"setContext",
+			"agentSpace.agentMode",
+			true,
 		);
-		expect(executeCommandMock.mock.calls).toEqual([
-			["vscode.getEditorLayout"],
-			["getContextKeyValue", "panelVisible"],
-			["workbench.action.closePanel"],
-			["workbench.action.editorLayoutSingle"],
-		]);
 		expect(isolation.isActive()).toBe(true);
 	});
 
-	it("restores the tabs setting and panel state on leave", async () => {
-		executeCommandMock.mockImplementation((command: string) => {
-			if (command === "vscode.getEditorLayout") {
-				return Promise.resolve({
-					orientation: 0,
-					groups: [{ size: 1 }, { size: 1 }],
-				});
-			}
-			if (command === "getContextKeyValue") {
-				return Promise.resolve(true);
-			}
-			return Promise.resolve(undefined);
-		});
-		mockedWindow.terminals = [{}];
-		const isolation = new AgentWorkspaceIsolation();
-
+	it("clears agentMode context on leave", async () => {
+		const isolation = new ContextOnlyIsolation();
 		await isolation.enter();
+
 		await isolation.leave();
 
-		expect(updateMock.mock.calls).toEqual([
-			["showTabs", "none", vscode.ConfigurationTarget.Global],
-			["showTabs", "multiple", vscode.ConfigurationTarget.Global],
-		]);
-		expect(executeCommandMock.mock.calls).toEqual([
-			["vscode.getEditorLayout"],
-			["getContextKeyValue", "panelVisible"],
-			["workbench.action.closePanel"],
-			["workbench.action.editorLayoutSingle"],
-			[
-				"vscode.setEditorLayout",
-				{
-					orientation: 0,
-					groups: [{ size: 1 }, { size: 1 }],
-				},
-			],
-			["workbench.action.togglePanel"],
-		]);
+		expect(executeCommandMock).toHaveBeenCalledWith(
+			"setContext",
+			"agentSpace.agentMode",
+			false,
+		);
 		expect(isolation.isActive()).toBe(false);
 	});
 
-	it("uses workspace scope when that is where tabs are configured", async () => {
-		getConfigurationMock.mockReturnValue({
-			inspect: vi.fn(() => ({
-				workspaceValue: "single",
-			})),
-			update: updateMock,
-		});
-		const isolation = new AgentWorkspaceIsolation();
+	it("does not modify tabs or panel settings", async () => {
+		const isolation = new ContextOnlyIsolation();
 
 		await isolation.enter();
 		await isolation.leave();
 
-		expect(updateMock.mock.calls).toEqual([
-			["showTabs", "none", vscode.ConfigurationTarget.Workspace],
-			["showTabs", "single", vscode.ConfigurationTarget.Workspace],
-		]);
+		const commands = executeCommandMock.mock.calls.map(
+			(c: string[]) => c[0],
+		);
+		expect(commands).not.toContain("workbench.action.closePanel");
+		expect(commands).not.toContain("workbench.action.editorLayoutSingle");
+		expect(commands).not.toContain("workbench.action.togglePanel");
+	});
+
+	it("supports debounce scheduling", async () => {
+		const isolation = new ContextOnlyIsolation();
+
+		isolation.scheduleEnter();
+		expect(isolation.getPendingAction()).toBe("enter");
+
+		await vi.advanceTimersByTimeAsync(50);
+
+		expect(isolation.isActive()).toBe(true);
+
+		isolation.scheduleLeave();
+		expect(isolation.getPendingAction()).toBe("leave");
+
+		await vi.advanceTimersByTimeAsync(50);
+
+		expect(isolation.isActive()).toBe(false);
+	});
+
+	it("aborts leave when guard returns false", async () => {
+		const isolation = new ContextOnlyIsolation();
+		await isolation.enter();
+
+		isolation.scheduleLeave({ guard: () => false });
+
+		await vi.advanceTimersByTimeAsync(50);
+
+		expect(isolation.isActive()).toBe(true);
+	});
+
+	it("cancels pending leave when enter() is called directly", async () => {
+		const isolation = new ContextOnlyIsolation();
+		await isolation.enter();
+
+		isolation.scheduleLeave();
+		expect(isolation.getPendingAction()).toBe("leave");
+
+		await isolation.leave();
+		await isolation.enter();
+
+		await vi.advanceTimersByTimeAsync(50);
+
+		expect(isolation.isActive()).toBe(true);
+	});
+
+	it("exposes cancelPending() as a public method", () => {
+		const isolation = new ContextOnlyIsolation();
+
+		isolation.scheduleEnter();
+		expect(isolation.getPendingAction()).toBe("enter");
+
+		isolation.cancelPending();
+		expect(isolation.getPendingAction()).toBeUndefined();
 	});
 });

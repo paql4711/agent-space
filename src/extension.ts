@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import * as vscode from "vscode";
 import { CodingToolRegistry } from "./agents/codingToolRegistry";
 import { SessionNameSyncer } from "./agents/sessionNameSyncer";
@@ -14,30 +13,16 @@ import {
 	openFeatureGitView,
 	PENDING_GIT_VIEW_HANDOFF_PREF,
 } from "./git/gitViewHandoff";
-import {
-	listLocalBranches,
-	mergeFeatureIntoBranch,
-	rebaseFeatureOntoBase,
-	syncBaseBranch,
-} from "./git/workflow";
 import { HomePanel } from "./home/homePanel";
 import { PrerequisiteChecker } from "./prerequisites";
-import type { ProjectContext } from "./projects/projectManager";
 import { ProjectManager } from "./projects/projectManager";
 import { ensureDefaultToolConfigured } from "./startup/defaultToolInitializer";
 import { GlobalStore } from "./storage/globalStore";
-import type {
-	Feature,
-	ProjectCommandCwdMode,
-	ProjectCommandGroup,
-} from "./types";
-import {
-	type AgentSpaceUiState,
-	resolveAgentSpaceIsolationAction,
-} from "./workspace/agentSpaceUiState";
-import { AgentWorkspaceIsolation } from "./workspace/agentWorkspaceIsolation";
+import { execAsync, execAsyncSilent } from "./utils/platform";
+import { ContextOnlyIsolation } from "./workspace/agentWorkspaceIsolation";
 
 let activeFeatureId: string | null = null;
+let featureActivationInProgress = false;
 
 export async function activate(
 	context: vscode.ExtensionContext,
@@ -53,40 +38,7 @@ export async function activate(
 
 	const storagePath = context.globalStorageUri.fsPath;
 	const globalStore = new GlobalStore(storagePath);
-	const workspaceIsolation = new AgentWorkspaceIsolation();
-	let agentSpaceUiState: AgentSpaceUiState = {
-		sidebarVisible: false,
-		homeActive: false,
-	};
-	let isolationUpdateChain = Promise.resolve();
-
-	const updateAgentSpaceUiState = (
-		partial: Partial<AgentSpaceUiState>,
-	): void => {
-		const previousState = agentSpaceUiState;
-		const nextState = {
-			...previousState,
-			...partial,
-		};
-		const action = resolveAgentSpaceIsolationAction(previousState, nextState);
-		agentSpaceUiState = nextState;
-
-		if (action === "noop") {
-			return;
-		}
-
-		isolationUpdateChain = isolationUpdateChain
-			.catch((error) => {
-				console.error("Agent Space isolation transition failed", error);
-			})
-			.then(async () => {
-				if (action === "enter") {
-					await workspaceIsolation.enter();
-					return;
-				}
-				await workspaceIsolation.leave();
-			});
-	};
+	const workspaceIsolation = new ContextOnlyIsolation();
 
 	// One-time migration from Memento to file-based GlobalStore
 	if (!globalStore.hasProjectsFile()) {
@@ -112,11 +64,6 @@ export async function activate(
 		worktreeRelativePath,
 		tmux,
 	);
-	const refreshUi = () => {
-		sidebarProvider.refresh();
-		const home = HomePanel.getInstance();
-		if (home) home.refresh();
-	};
 	const gitViewHandoffAction = getGitViewHandoffAction(
 		globalStore.getPreference(PENDING_GIT_VIEW_HANDOFF_PREF),
 		vscode.workspace.workspaceFolders,
@@ -181,9 +128,7 @@ export async function activate(
 			sidebarProvider,
 		),
 	);
-	sidebarProvider.onVisibilityChange((visible) => {
-		updateAgentSpaceUiState({ sidebarVisible: visible });
-	});
+	context.subscriptions.push({ dispose: () => sidebarProvider.stopPolling() });
 
 	const ensureHomePanel = () => {
 		const panel = HomePanel.createOrShow(
@@ -195,7 +140,25 @@ export async function activate(
 			terminalController,
 		);
 		panel.onViewStateChange(({ active }) => {
-			updateAgentSpaceUiState({ homeActive: active });
+			if (active) {
+				workspaceIsolation.scheduleEnter();
+				return;
+			}
+
+			if (featureActivationInProgress) return;
+
+			workspaceIsolation.scheduleLeave({
+				guard: () => {
+					if (featureActivationInProgress) return false;
+					// Abort leave if focus moved to a feature terminal
+					const active = vscode.window.activeTerminal;
+					return !(
+						active &&
+						activeFeatureId &&
+						terminalController.findAgentIdByTerminal(active)
+					);
+				},
+			});
 		});
 		return panel;
 	};
@@ -208,230 +171,88 @@ export async function activate(
 		} else {
 			panel.showWelcome();
 		}
+		await workspaceIsolation.enter();
 		return panel;
 	};
 
 	const activateFeatureInCurrentWindow = async (
 		featureId: string,
 	): Promise<void> => {
-		if (activeFeatureId && activeFeatureId !== featureId) {
-			terminalController.disposeFeatureTerminals(activeFeatureId);
-		}
-
-		activeFeatureId = featureId;
-		const ctx = projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
-
-		const agents = ctx.agentManager.getAgents(featureId);
-		if (agents.length === 0) {
-			const initialTool = toolRegistry.getPreferredAvailableTool();
-			if (!initialTool) {
-				vscode.window.showErrorMessage(
-					"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
-				);
-				return;
-			}
-			try {
-				const agent = ctx.agentManager.createAgent(feature, initialTool.id);
-				terminalController.createTerminal(feature, agent, 0);
-			} catch (err) {
-				const message =
-					err instanceof Error ? err.message : "Failed to create agent";
-				vscode.window.showErrorMessage(
-					`Create agent failed for ${feature.branch}: ${message}`,
-				);
-				return;
-			}
-		} else {
-			terminalController.reconnectTmuxSessions(feature);
-		}
-
-		await showAgentSpace(featureId);
-	};
-
-	const resolveWorkspaceContext = (
-		featureId: string | null | undefined,
-	): { ctx: ProjectContext; feature: Feature } | null => {
-		if (!featureId) return null;
-		const ctx = projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return null;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return null;
-		return { ctx, feature };
-	};
-
-	const promptProjectContext = async () => {
-		const projects = projectManager.getProjects();
-		if (projects.length === 0) return null;
-		if (projects.length === 1) {
-			const ctx = projectManager.getContext(projects[0].id);
-			return ctx ?? null;
-		}
-		const pick = await vscode.window.showQuickPick(
-			projects.map((project) => ({
-				label: project.name,
-				description: project.repoPath,
-				projectId: project.id,
-			})),
-			{ placeHolder: "Select project" },
-		);
-		if (!pick) return null;
-		return projectManager.getContext(pick.projectId) ?? null;
-	};
-
-	const promptProjectCommand = async (ctx: ProjectContext): Promise<void> => {
-		const label = await vscode.window.showInputBox({
-			prompt: `Command label for ${ctx.project.name}`,
-			validateInput: (value) =>
-				value.trim() ? undefined : "Command label is required",
-		});
-		if (!label) return;
-
-		const command = await vscode.window.showInputBox({
-			prompt: "Shell command",
-			validateInput: (value) =>
-				value.trim() ? undefined : "Shell command is required",
-		});
-		if (!command) return;
-
-		const cwdPick = await vscode.window.showQuickPick<{
-			label: string;
-			value: ProjectCommandCwdMode;
-		}>(
-			[
-				{
-					label: "Run in selected workspace",
-					value: "workspace",
-				},
-				{
-					label: "Run in project root",
-					value: "repoRoot",
-				},
-			],
-			{ placeHolder: "Working directory" },
-		);
-		if (!cwdPick) return;
-
-		const groupPick = await vscode.window.showQuickPick<{
-			label: string;
-			value: ProjectCommandGroup;
-		}>(
-			[
-				{ label: "App", value: "app" },
-				{ label: "Test", value: "test" },
-				{ label: "Git", value: "git" },
-			],
-			{ placeHolder: "Command group" },
-		);
-		if (!groupPick) return;
-
-		ctx.projectCommandManager.addCommand(
-			label.trim(),
-			command.trim(),
-			cwdPick.value,
-			groupPick.value,
-		);
-		refreshUi();
-		vscode.window.showInformationMessage(
-			`Saved project command "${label.trim()}" for ${ctx.project.name}.`,
-		);
-	};
-
-	const runSyncBaseBranch = async (featureId: string): Promise<void> => {
-		const resolved = resolveWorkspaceContext(featureId);
-		if (!resolved) return;
+		if (featureActivationInProgress) return;
+		featureActivationInProgress = true;
 		try {
-			syncBaseBranch(
-				resolved.ctx.project.repoPath,
-				resolved.ctx.featureManager.getBaseBranch(),
-			);
-			vscode.window.showInformationMessage(
-				`Synced ${resolved.ctx.featureManager.getBaseBranch()} in ${resolved.ctx.project.name}.`,
-			);
-		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : "Failed to sync base branch";
-			vscode.window.showErrorMessage(`Sync base branch failed: ${message}`);
+			if (activeFeatureId && activeFeatureId !== featureId) {
+				terminalController.disposeFeatureTerminals(activeFeatureId);
+			}
+
+			activeFeatureId = featureId;
+			const resolved = projectManager.resolveFeature(featureId);
+			if (!resolved) return;
+			const { ctx, feature } = resolved;
+
+			const agents = ctx.agentManager.getAgents(featureId);
+			if (agents.length === 0) {
+				const initialTool = toolRegistry.getPreferredAvailableTool();
+				if (!initialTool) {
+					vscode.window.showErrorMessage(
+						"No coding tools found on PATH. Install one of: claude, copilot, codex, opencode.",
+					);
+					return;
+				}
+				try {
+					const agent = ctx.agentManager.createAgent(feature, initialTool.id);
+					const terminal = terminalController.createTerminal(feature, agent, 0);
+					if (!terminal) {
+						setTimeout(() => terminalController.reconnectTmuxSessions(feature), 500);
+					}
+				} catch (err) {
+					const message =
+						err instanceof Error ? err.message : "Failed to create agent";
+					vscode.window.showErrorMessage(
+						`Create agent failed for ${feature.branch}: ${message}`,
+					);
+					return;
+				}
+			} else {
+				terminalController.reconnectTmuxSessions(feature);
+			}
+
+			await showAgentSpace(featureId);
+		} finally {
+			featureActivationInProgress = false;
 		}
 	};
 
-	const runRebaseOntoBase = async (featureId: string): Promise<void> => {
-		const resolved = resolveWorkspaceContext(featureId);
-		if (!resolved || resolved.feature.kind === "base") return;
-
-		try {
-			rebaseFeatureOntoBase(
-				resolved.ctx.project.repoPath,
-				resolved.feature.worktreePath,
-				resolved.ctx.featureManager.getBaseBranch(),
-			);
-			vscode.window.showInformationMessage(
-				`Rebased ${resolved.feature.branch} onto ${resolved.ctx.featureManager.getBaseBranch()}.`,
-			);
-		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : "Failed to rebase onto base";
-			vscode.window.showErrorMessage(`Rebase failed: ${message}`);
-		}
-	};
-
-	const runMergeIntoBranch = async (featureId: string): Promise<void> => {
-		const resolved = resolveWorkspaceContext(featureId);
-		if (!resolved || resolved.feature.kind === "base") return;
-
-		const branches = listLocalBranches(resolved.ctx.project.repoPath).filter(
-			(branch) => branch !== resolved.feature.branch,
-		);
-		if (branches.length === 0) {
-			vscode.window.showWarningMessage(
-				"No local target branches available for merge.",
-			);
+	sidebarProvider.onVisibilityChange((visible) => {
+		if (!visible) {
+			if (featureActivationInProgress) return;
+			// Sidebar hidden → restore tab bar, but NO terminal cleanup
+			// (terminals are only cleaned up via the HomePanel viewstate handler)
+			workspaceIsolation.scheduleLeave({
+				guard: () => {
+					if (featureActivationInProgress) return false;
+					const activeTerm = vscode.window.activeTerminal;
+					return !(
+						activeTerm &&
+						activeFeatureId &&
+						terminalController.findAgentIdByTerminal(activeTerm)
+					);
+				},
+			});
 			return;
 		}
 
-		const baseBranch = resolved.ctx.featureManager.getBaseBranch();
-		const pick = await vscode.window.showQuickPick(
-			branches.map((branch) => ({
-				label: branch,
-				description: branch === baseBranch ? "(base branch)" : undefined,
-			})),
-			{ placeHolder: "Merge current feature into which branch?" },
-		);
-		if (!pick) return;
-
-		const confirm = await vscode.window.showWarningMessage(
-			`Merge ${resolved.feature.branch} into ${pick.label}?`,
-			{ modal: true },
-			"Merge",
-		);
-		if (confirm !== "Merge") return;
-
-		try {
-			const result = mergeFeatureIntoBranch(
-				resolved.ctx.project.repoPath,
-				resolved.ctx.featureManager.getWorktreeBase(),
-				resolved.feature.branch,
-				pick.label,
-			);
-			if (result.keptForInspection) {
-				vscode.window.showErrorMessage(
-					`Merge stopped with conflicts. Inspect the temporary worktree at ${result.worktreePath}.`,
-				);
-				return;
-			}
-
-			vscode.window.showInformationMessage(
-				`Merged ${resolved.feature.branch} into ${pick.label}.`,
-			);
-		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : "Failed to merge feature";
-			vscode.window.showErrorMessage(`Merge failed: ${message}`);
+		// Sidebar visible → reconnect and re-enter isolation
+		// enter() in showAgentSpace cancels any pending leave via cancelPending()
+		if (activeFeatureId) {
+			const resolved = projectManager.resolveFeature(activeFeatureId);
+			if (!resolved) return;
+			terminalController.reconnectTmuxSessions(resolved.feature);
+			void showAgentSpace(activeFeatureId);
+			return;
 		}
-	};
+		void showAgentSpace();
+	});
 
 	const claudeProvider = new ClaudeSessionProvider();
 	const codexProvider = new CodexSessionProvider();
@@ -441,10 +262,9 @@ export async function activate(
 	]);
 	sessionNameSyncer.onAgentRenamed((agentId, featureId) => {
 		projectManager.notifyChange();
-		const ctx = projectManager.findContextByFeatureId(featureId);
-		if (!ctx) return;
-		const feature = ctx.featureManager.getFeature(featureId);
-		if (!feature) return;
+		const resolved = projectManager.resolveFeature(featureId);
+		if (!resolved) return;
+		const { ctx, feature } = resolved;
 		const agents = ctx.agentManager.getAgents(featureId);
 		const agent = agents.find((a) => a.id === agentId);
 		if (!agent) return;
@@ -488,7 +308,9 @@ export async function activate(
 	);
 
 	projectManager.onChange(() => {
-		refreshUi();
+		sidebarProvider.refresh();
+		const home = HomePanel.getInstance();
+		if (home) home.refresh();
 	});
 
 	// Command: Open Home
@@ -533,7 +355,7 @@ export async function activate(
 				const ctx = projectManager.getContext(projectId);
 				if (!ctx) return;
 
-				if (!isGitRepo(ctx.project.repoPath)) {
+				if (!(await isGitRepoAsync(ctx.project.repoPath))) {
 					vscode.window.showErrorMessage(
 						`"${ctx.project.name}" is not a Git repository.`,
 					);
@@ -602,10 +424,8 @@ export async function activate(
 		vscode.commands.registerCommand(
 			"agentSpace.selectFeature",
 			async (featureId: string) => {
-				const ctx = projectManager.findContextByFeatureId(featureId);
-				if (!ctx) return;
-
-				if (!ctx.featureManager.getFeature(featureId)) return;
+				const resolved = projectManager.resolveFeature(featureId);
+				if (!resolved) return;
 				await activateFeatureInCurrentWindow(featureId);
 			},
 		),
@@ -631,11 +451,9 @@ export async function activate(
 				const featureId = featureIdArg ?? activeFeatureId;
 				if (!featureId) return;
 
-				const ctx = projectManager.findContextByFeatureId(featureId);
-				if (!ctx) return;
-
-				const feature = ctx.featureManager.getFeature(featureId);
-				if (!feature) return;
+				const resolved = projectManager.resolveFeature(featureId);
+				if (!resolved) return;
+				const { ctx, feature } = resolved;
 
 				// Tool selection — only show installed tools
 				const tools = toolRegistry.getAvailableToolsPreferredFirst();
@@ -681,186 +499,56 @@ export async function activate(
 				const featureId = featureIdArg ?? activeFeatureId;
 				if (!featureId) return;
 
-				const ctx = projectManager.findContextByFeatureId(featureId);
-				if (!ctx) return;
-
-				const feature = ctx.featureManager.getFeature(featureId);
-				if (!feature) return;
+				const resolved = projectManager.resolveFeature(featureId);
+				if (!resolved) return;
+				const { ctx, feature } = resolved;
 
 				const { detectScripts } = await import("./services/scriptDetector");
 				const scripts = detectScripts(feature.worktreePath);
 				const picks: Array<{
 					label: string;
 					description: string;
-					action: () => Promise<void> | void;
+					serviceName: string;
+					serviceCommand: string;
+					launchCommand: string | null;
 				}> = [
 					{
 						label: "$(terminal) Open Terminal",
 						description: "Start an interactive shell in this worktree",
-						action: () => {
-							const service = ctx.serviceManager.createService(
-								featureId,
-								"Terminal",
-								"Interactive shell",
-								null,
-							);
-							terminalController.createServiceTerminal(
-								feature,
-								service,
-								feature.worktreePath,
-							);
-							refreshUi();
-						},
+						serviceName: "Terminal",
+						serviceCommand: "Interactive shell",
+						launchCommand: null,
 					},
-					...(feature.kind === "base"
-						? [
-								{
-									label: "$(sync) Sync Base Branch",
-									description: `Fast-forward ${ctx.featureManager.getBaseBranch()} in project root`,
-									action: () => runSyncBaseBranch(feature.id),
-								},
-							]
-						: [
-								{
-									label: "$(git-pull-request-create) Rebase Onto Base",
-									description: `Rebase ${feature.branch} onto ${ctx.featureManager.getBaseBranch()}`,
-									action: () => runRebaseOntoBase(feature.id),
-								},
-								{
-									label: "$(merge) Merge Into Selected Branch",
-									description: `Merge ${feature.branch} into another local branch`,
-									action: () => runMergeIntoBranch(feature.id),
-								},
-							]),
 					...scripts.map((s) => ({
 						label: s.name,
 						description: s.command,
-						action: () => {
-							const service = ctx.serviceManager.createService(
-								featureId,
-								s.name,
-								s.command,
-								s.command,
-							);
-							terminalController.createServiceTerminal(
-								feature,
-								service,
-								feature.worktreePath,
-							);
-							refreshUi();
-						},
+						serviceName: s.name,
+						serviceCommand: s.command,
+						launchCommand: s.command,
 					})),
-					...ctx.projectCommandManager.getCommands().map((command) => ({
-						label: command.label,
-						description: command.command,
-						action: () => {
-							const cwd =
-								command.cwdMode === "repoRoot"
-									? ctx.project.repoPath
-									: feature.worktreePath;
-							const service = ctx.serviceManager.createService(
-								featureId,
-								command.label,
-								command.command,
-								command.command,
-							);
-							terminalController.createServiceTerminal(feature, service, cwd);
-							refreshUi();
-						},
-					})),
-					{
-						label: "$(gear) Add Project Command",
-						description: "Save a reusable command for this project",
-						action: () => promptProjectCommand(ctx),
-					},
 				];
 
 				const pick = await vscode.window.showQuickPick(picks, {
-					placeHolder: "Run a workspace action",
+					placeHolder: "Start a service in this worktree",
 				});
 				if (!pick) return;
 
-				await pick.action();
-			},
-		),
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.addProjectCommand",
-			async (featureIdArg?: string) => {
-				const resolved = resolveWorkspaceContext(
-					featureIdArg ?? activeFeatureId,
+				const service = ctx.serviceManager.createService(
+					featureId,
+					pick.serviceName,
+					pick.serviceCommand,
+					pick.launchCommand,
 				);
-				const ctx = resolved?.ctx ?? (await promptProjectContext());
-				if (!ctx) return;
-				await promptProjectCommand(ctx);
-			},
-		),
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.removeProjectCommand",
-			async (featureIdArg?: string) => {
-				const resolved = resolveWorkspaceContext(
-					featureIdArg ?? activeFeatureId,
-				);
-				const ctx = resolved?.ctx ?? (await promptProjectContext());
-				if (!ctx) return;
-
-				const commands = ctx.projectCommandManager.getCommands();
-				if (commands.length === 0) {
-					vscode.window.showInformationMessage(
-						`No saved project commands for ${ctx.project.name}.`,
-					);
-					return;
+				if (!terminalController.createServiceTerminal(
+					feature,
+					service,
+					feature.worktreePath,
+				)) {
+					ctx.serviceManager.stopService(service.id, featureId);
 				}
-
-				const pick = await vscode.window.showQuickPick(
-					commands.map((command) => ({
-						label: command.label,
-						description: command.command,
-						commandId: command.id,
-					})),
-					{ placeHolder: "Select project command to remove" },
-				);
-				if (!pick) return;
-				ctx.projectCommandManager.removeCommand(pick.commandId);
-				refreshUi();
-			},
-		),
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.syncBaseBranch",
-			async (featureIdArg?: string) => {
-				const featureId = featureIdArg ?? activeFeatureId;
-				if (!featureId) return;
-				await runSyncBaseBranch(featureId);
-			},
-		),
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.rebaseOntoBase",
-			async (featureIdArg?: string) => {
-				const featureId = featureIdArg ?? activeFeatureId;
-				if (!featureId) return;
-				await runRebaseOntoBase(featureId);
-			},
-		),
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.mergeIntoBranch",
-			async (featureIdArg?: string) => {
-				const featureId = featureIdArg ?? activeFeatureId;
-				if (!featureId) return;
-				await runMergeIntoBranch(featureId);
+				sidebarProvider.refresh();
+				const home = HomePanel.getInstance();
+				if (home) home.refresh();
 			},
 		),
 	);
@@ -872,11 +560,9 @@ export async function activate(
 			async (featureIdArg?: string, agentIdArg?: string) => {
 				if (!featureIdArg || !agentIdArg) return;
 
-				const ctx = projectManager.findContextByFeatureId(featureIdArg);
-				if (!ctx) return;
-
-				const feature = ctx.featureManager.getFeature(featureIdArg);
-				if (!feature) return;
+				const resolved = projectManager.resolveFeature(featureIdArg);
+				if (!resolved) return;
+				const { ctx, feature } = resolved;
 
 				const agents = ctx.agentManager.getAgents(featureIdArg);
 				const agent = agents.find((a) => a.id === agentIdArg);
@@ -904,6 +590,37 @@ export async function activate(
 		),
 	);
 
+	// Command: Delete Agent
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"agentSpace.deleteAgent",
+			async (featureIdArg?: string, agentIdArg?: string) => {
+				if (!featureIdArg || !agentIdArg) return;
+
+				const resolved = projectManager.resolveFeature(featureIdArg);
+				if (!resolved) return;
+				const { ctx } = resolved;
+
+				const agents = ctx.agentManager.getAgents(featureIdArg);
+				const agent = agents.find((a) => a.id === agentIdArg);
+				if (!agent) return;
+
+				const confirm = await vscode.window.showWarningMessage(
+					`Delete agent "${agent.name}"? This will permanently remove the agent and kill its session.`,
+					{ modal: true },
+					"Delete",
+				);
+				if (confirm !== "Delete") return;
+
+				terminalController.killAgentTerminal(agentIdArg, featureIdArg);
+				ctx.agentManager.deleteAgent(agentIdArg, featureIdArg);
+				sidebarProvider.refresh();
+				const home = HomePanel.getInstance();
+				if (home) home.refresh();
+			},
+		),
+	);
+
 	// Command: Reopen Agent
 	context.subscriptions.push(
 		vscode.commands.registerCommand(
@@ -911,11 +628,9 @@ export async function activate(
 			(featureIdArg?: string, agentIdArg?: string) => {
 				if (!featureIdArg || !agentIdArg) return;
 
-				const ctx = projectManager.findContextByFeatureId(featureIdArg);
-				if (!ctx) return;
-
-				const feature = ctx.featureManager.getFeature(featureIdArg);
-				if (!feature) return;
+				const resolved = projectManager.resolveFeature(featureIdArg);
+				if (!resolved) return;
+				const { ctx, feature } = resolved;
 
 				const agent = ctx.agentManager.reopenAgent(agentIdArg, feature);
 				if (!agent) {
@@ -941,6 +656,7 @@ export async function activate(
 			"agentSpace.toggleIsolation",
 			(featureIdArg?: string) => {
 				if (!featureIdArg) return;
+				if (ProjectManager.isBaseFeatureId(featureIdArg)) return;
 
 				const perAgentEnabled = vscode.workspace
 					.getConfiguration("agentSpace")
@@ -968,18 +684,13 @@ export async function activate(
 			async (featureIdArg?: string) => {
 				const featureId = featureIdArg ?? activeFeatureId;
 				if (!featureId) return;
+				if (ProjectManager.isBaseFeatureId(featureId)) return;
 
 				const ctx = projectManager.findContextByFeatureId(featureId);
 				if (!ctx) return;
 
 				const feature = ctx.featureManager.getFeature(featureId);
 				if (!feature) return;
-				if (feature.kind === "base") {
-					vscode.window.showWarningMessage(
-						"The main workspace is built in and cannot be deleted.",
-					);
-					return;
-				}
 
 				const confirm = await vscode.window.showWarningMessage(
 					`Delete feature "${feature.name}"?\n\nWorktree: ${feature.worktreePath}\n\nThis removes the worktree and all agent data.`,
@@ -1012,10 +723,7 @@ export async function activate(
 				await openFeatureGitView(
 					featureIdArg,
 					activeFeatureId,
-					(featureId) => {
-						const ctx = projectManager.findContextByFeatureId(featureId);
-						return ctx?.featureManager.getFeature(featureId);
-					},
+					(featureId) => projectManager.resolveFeature(featureId)?.feature,
 					globalStore,
 					(worktreePath) =>
 						vscode.commands.executeCommand(
@@ -1034,18 +742,13 @@ export async function activate(
 			async (featureIdArg?: string) => {
 				const featureId = featureIdArg ?? activeFeatureId;
 				if (!featureId) return;
+				if (ProjectManager.isBaseFeatureId(featureId)) return;
 
 				const ctx = projectManager.findContextByFeatureId(featureId);
 				if (!ctx) return;
 
 				const feature = ctx.featureManager.getFeature(featureId);
 				if (!feature) return;
-				if (feature.kind === "base") {
-					vscode.window.showWarningMessage(
-						"Create Pull Request is only available for feature workspaces.",
-					);
-					return;
-				}
 
 				if (!prerequisites.isGhPrExtensionInstalled()) {
 					vscode.window.showErrorMessage(
@@ -1055,11 +758,19 @@ export async function activate(
 				}
 
 				try {
-					execSync(`git push -u origin "${feature.branch}"`, {
-						cwd: feature.worktreePath,
-						encoding: "utf-8",
-						stdio: ["ignore", "pipe", "pipe"],
-					});
+					await vscode.window.withProgress(
+						{
+							location: vscode.ProgressLocation.Notification,
+							title: `Pushing "${feature.branch}"...`,
+							cancellable: false,
+						},
+						async () => {
+							await execAsync(
+								`git push -u origin "${feature.branch}"`,
+								{ cwd: feature.worktreePath },
+							);
+						},
+					);
 					vscode.window.showInformationMessage(
 						`Branch "${feature.branch}" pushed. Opening PR creation...`,
 					);
@@ -1075,49 +786,6 @@ export async function activate(
 		),
 	);
 
-	// Command: Open Feature Folder
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.openFeatureFolder",
-			(featureIdArg?: string) => {
-				const featureId = featureIdArg ?? activeFeatureId;
-				if (!featureId) return;
-
-				const ctx = projectManager.findContextByFeatureId(featureId);
-				if (!ctx) return;
-
-				const feature = ctx.featureManager.getFeature(featureId);
-				if (!feature) return;
-
-				vscode.commands.executeCommand(
-					"vscode.openFolder",
-					vscode.Uri.file(feature.worktreePath),
-					{ forceNewWindow: true },
-				);
-			},
-		),
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			"agentSpace.openMainWorkspace",
-			async (projectIdArg?: string) => {
-				let ctx: ProjectContext | null | undefined =
-					projectIdArg !== undefined
-						? projectManager.getContext(projectIdArg)
-						: undefined;
-				if (!ctx) {
-					ctx = await promptProjectContext();
-				}
-				if (!ctx) return;
-				const base = ctx.featureManager
-					.getFeatures()
-					.find((feature) => feature.kind === "base");
-				if (!base) return;
-				await activateFeatureInCurrentWindow(base.id);
-			},
-		),
-	);
 
 	// Command: Add Project
 	context.subscriptions.push(
@@ -1131,7 +799,7 @@ export async function activate(
 			if (!uris || uris.length === 0) return;
 
 			const repoPath = uris[0].fsPath;
-			if (!isGitRepo(repoPath)) {
+			if (!(await isGitRepoAsync(repoPath))) {
 				vscode.window.showErrorMessage(
 					"Selected folder is not a Git repository.",
 				);
@@ -1205,11 +873,6 @@ export async function activate(
 
 export function deactivate(): void {}
 
-function isGitRepo(cwd: string): boolean {
-	try {
-		execSync("git rev-parse --is-inside-work-tree", { cwd, stdio: "ignore" });
-		return true;
-	} catch {
-		return false;
-	}
+async function isGitRepoAsync(cwd: string): Promise<boolean> {
+	return execAsyncSilent("git rev-parse --is-inside-work-tree", { cwd });
 }
