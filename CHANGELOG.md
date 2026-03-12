@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-03-12
+
+### Other
+- format code for release
+- Harden tmux terminal session handling
+- Simplify feature UX and add git status surfaces
+
+
 ## [0.4.0] - 2026-03-09
 
 ### Fixes

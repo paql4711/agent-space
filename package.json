@@ -3,7 +3,7 @@
 	"displayName": "Agent Space",
 	"publisher": "paql4711",
 	"description": "Run any coding CLI per feature with isolated Git worktrees and persistent sessions in VS Code",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"icon": "media/marketplace/icon.png",
 	"license": "MIT",
 	"repository": {
