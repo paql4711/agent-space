@@ -233,7 +233,11 @@ export class ProjectManager {
 			worktreeBase,
 			this.tmux,
 		);
-		const serviceManager = new ServiceManager(store, project.repoPath, this.tmux);
+		const serviceManager = new ServiceManager(
+			store,
+			project.repoPath,
+			this.tmux,
+		);
 
 		// Populate reverse index
 		for (const feature of featureManager.getFeatures()) {

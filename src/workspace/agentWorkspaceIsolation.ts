@@ -20,9 +20,7 @@ export class ContextOnlyIsolation {
 		}, DEBOUNCE_MS);
 	}
 
-	public scheduleLeave(options?: {
-		guard?: () => boolean;
-	}): void {
+	public scheduleLeave(options?: { guard?: () => boolean }): void {
 		this.cancelPending();
 		this.pendingAction = "leave";
 		this.debounceTimer = setTimeout(() => {

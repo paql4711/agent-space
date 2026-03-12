@@ -166,15 +166,16 @@ export function execSilent(cmd: string, opts?: { cwd?: string }): boolean {
 // Async exec helpers
 // ---------------------------------------------------------------------------
 
-type ExecPromiseFn = (cmd: string, opts?: Record<string, unknown>) => Promise<{ stdout: string; stderr: string }>;
+type ExecPromiseFn = (
+	cmd: string,
+	opts?: Record<string, unknown>,
+) => Promise<{ stdout: string; stderr: string }>;
 let _execPromise: ExecPromiseFn | undefined;
 
 function getExecPromise(): ExecPromiseFn {
 	if (!_execPromise) {
 		// Lazy init to avoid breaking test mocks that don't include exec
-		// biome-ignore lint/style/noVar: require needed for lazy loading
 		const { exec: cpExec } = require("node:child_process");
-		// biome-ignore lint/style/noVar: require needed for lazy loading
 		const { promisify } = require("node:util");
 		_execPromise = promisify(cpExec) as ExecPromiseFn;
 	}

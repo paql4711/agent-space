@@ -217,7 +217,12 @@ function toggleProject(id) {
 }
 
 // -- Incremental sidebar updates via postMessage ----------------------------
-const STATUS_LABELS = { "new": "New", modified: "Modified", ahead: "Ahead", merged: "Merged" };
+const STATUS_LABELS = {
+	"new": "New",
+	modified: "Modified",
+	ahead: "Ahead",
+	merged: "Merged",
+};
 
 window.addEventListener("message", function (event) {
 	var msg = event.data;
@@ -231,7 +236,10 @@ window.addEventListener("message", function (event) {
 		for (var f = 0; f < proj.features.length; f++) {
 			var feat = proj.features[f];
 			var card = document.querySelector('[data-feature-id="' + feat.id + '"]');
-			if (!card) { needsFullRefresh = true; continue; }
+			if (!card) {
+				needsFullRefresh = true;
+				continue;
+			}
 
 			// Update git status badge
 			if (!feat.isBase && feat.gitStatus) {
@@ -246,7 +254,10 @@ window.addEventListener("message", function (event) {
 			for (var a = 0; a < feat.agents.length; a++) {
 				var agent = feat.agents[a];
 				var agentEl = card.querySelector('[data-agent-id="' + agent.id + '"]');
-				if (!agentEl) { needsFullRefresh = true; continue; }
+				if (!agentEl) {
+					needsFullRefresh = true;
+					continue;
+				}
 
 				var dot = agentEl.querySelector(".status-dot");
 				if (dot) {
@@ -261,20 +272,36 @@ window.addEventListener("message", function (event) {
 				if (agent.status === "errored") statusClass = "errored";
 
 				// Replace status class on agent card
-				agentEl.className = agentEl.className.replace(/\b(idle|running|stopped|done|errored)\b/g, "").trim() + " " + statusClass;
+				agentEl.className =
+					agentEl.className
+						.replace(/\b(idle|running|stopped|done|errored)\b/g, "")
+						.trim() +
+					" " +
+					statusClass;
 			}
 
 			// Update service statuses
 			for (var s = 0; s < feat.services.length; s++) {
 				var svc = feat.services[s];
 				var svcEl = card.querySelector('[data-service-id="' + svc.id + '"]');
-				if (!svcEl) { needsFullRefresh = true; continue; }
-				svcEl.className = svcEl.className.replace(/\b(running|stopped|errored)\b/g, "").trim() + " " + svc.status;
+				if (!svcEl) {
+					needsFullRefresh = true;
+					continue;
+				}
+				svcEl.className =
+					svcEl.className.replace(/\b(running|stopped|errored)\b/g, "").trim() +
+					" " +
+					svc.status;
 			}
 
 			// Update collapse count
-			var activeCount = feat.agents.filter(function (a) { return a.status !== "done"; }).length
-				+ feat.services.filter(function (s) { return s.status === "running"; }).length;
+			var activeCount =
+				feat.agents.filter(function (a) {
+					return a.status !== "done";
+				}).length +
+				feat.services.filter(function (s) {
+					return s.status === "running";
+				}).length;
 			var countEl = document.getElementById("collapse-count-" + feat.id);
 			if (countEl) {
 				countEl.textContent = activeCount > 0 ? String(activeCount) : "";

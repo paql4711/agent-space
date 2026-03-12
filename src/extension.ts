@@ -203,7 +203,10 @@ export async function activate(
 					const agent = ctx.agentManager.createAgent(feature, initialTool.id);
 					const terminal = terminalController.createTerminal(feature, agent, 0);
 					if (!terminal) {
-						setTimeout(() => terminalController.reconnectTmuxSessions(feature), 500);
+						setTimeout(
+							() => terminalController.reconnectTmuxSessions(feature),
+							500,
+						);
 					}
 				} catch (err) {
 					const message =
@@ -539,11 +542,13 @@ export async function activate(
 					pick.serviceCommand,
 					pick.launchCommand,
 				);
-				if (!terminalController.createServiceTerminal(
-					feature,
-					service,
-					feature.worktreePath,
-				)) {
+				if (
+					!terminalController.createServiceTerminal(
+						feature,
+						service,
+						feature.worktreePath,
+					)
+				) {
 					ctx.serviceManager.stopService(service.id, featureId);
 				}
 				sidebarProvider.refresh();
@@ -765,10 +770,9 @@ export async function activate(
 							cancellable: false,
 						},
 						async () => {
-							await execAsync(
-								`git push -u origin "${feature.branch}"`,
-								{ cwd: feature.worktreePath },
-							);
+							await execAsync(`git push -u origin "${feature.branch}"`, {
+								cwd: feature.worktreePath,
+							});
 						},
 					);
 					vscode.window.showInformationMessage(
@@ -785,7 +789,6 @@ export async function activate(
 			},
 		),
 	);
-
 
 	// Command: Add Project
 	context.subscriptions.push(

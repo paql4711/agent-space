@@ -59,9 +59,7 @@ describe("ContextOnlyIsolation", () => {
 		await isolation.enter();
 		await isolation.leave();
 
-		const commands = executeCommandMock.mock.calls.map(
-			(c: string[]) => c[0],
-		);
+		const commands = executeCommandMock.mock.calls.map((c: string[]) => c[0]);
 		expect(commands).not.toContain("workbench.action.closePanel");
 		expect(commands).not.toContain("workbench.action.editorLayoutSingle");
 		expect(commands).not.toContain("workbench.action.togglePanel");

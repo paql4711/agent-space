@@ -363,5 +363,4 @@ describe("TerminalController", () => {
 			expect.stringContaining("Failed to start service"),
 		);
 	});
-
 });

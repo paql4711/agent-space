@@ -7,8 +7,8 @@ vi.mock("node:child_process", () => ({
 import { execSync } from "node:child_process";
 import {
 	computeGitStatus,
-	invalidateGitStatusCache,
 	type GitStatusInput,
+	invalidateGitStatusCache,
 } from "../features/featureGitStatus";
 
 const mockExecSync = vi.mocked(execSync);

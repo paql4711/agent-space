@@ -408,7 +408,8 @@ button {
 }
 
 @keyframes pulse-green {
-	0%, 100% {
+	0%,
+	100% {
 		opacity: 1;
 	}
 	50% {
@@ -498,7 +499,9 @@ button {
 
 .agent-delete-btn {
 	opacity: 0;
-	transition: opacity 0.1s, color 0.1s;
+	transition:
+		opacity 0.1s,
+		color 0.1s;
 }
 
 .agent-card:hover .agent-delete-btn {

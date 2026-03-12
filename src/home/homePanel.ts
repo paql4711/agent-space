@@ -267,7 +267,7 @@ export class HomePanel {
 			case "openGitView":
 				run("agentSpace.openFeatureGitView", message.featureId);
 				break;
-				case "deleteFeature":
+			case "deleteFeature":
 				run("agentSpace.deleteFeature", message.featureId);
 				break;
 			case "syncNames":
@@ -334,9 +334,7 @@ export class HomePanel {
 	// -- Terminal focus -------------------------------------------
 	private focusAgentTerminal(agentId: string): void {
 		if (!this.terminalController || !this.currentFeatureId) return;
-		const resolved = this.projectManager.resolveFeature(
-			this.currentFeatureId,
-		);
+		const resolved = this.projectManager.resolveFeature(this.currentFeatureId);
 		if (!resolved) return;
 		const { ctx, feature } = resolved;
 		const agents = ctx.agentManager.getAgents(this.currentFeatureId);
@@ -503,9 +501,7 @@ export class HomePanel {
 	// -- Git stats ------------------------------------------------
 	private async sendGitStatsAsync(): Promise<void> {
 		if (!this.currentFeatureId) return;
-		const resolved = this.projectManager.resolveFeature(
-			this.currentFeatureId,
-		);
+		const resolved = this.projectManager.resolveFeature(this.currentFeatureId);
 		if (!resolved) return;
 
 		const stats = await this.getGitDiffStatsAsync(resolved.feature);
@@ -517,14 +513,19 @@ export class HomePanel {
 		});
 	}
 
-	private async getGitDiffStatsAsync(feature: Feature): Promise<GitStats | null> {
+	private async getGitDiffStatsAsync(
+		feature: Feature,
+	): Promise<GitStats | null> {
 		const { execAsync } = await import("../utils/platform");
 		try {
 			let diffStat: string;
 			try {
-				const result = await execAsync(`git diff --stat HEAD...${feature.branch}`, {
-					cwd: feature.worktreePath,
-				});
+				const result = await execAsync(
+					`git diff --stat HEAD...${feature.branch}`,
+					{
+						cwd: feature.worktreePath,
+					},
+				);
 				diffStat = result.stdout.trim();
 			} catch {
 				const result = await execAsync("git diff --stat HEAD", {
@@ -544,17 +545,21 @@ export class HomePanel {
 		try {
 			let diffStat: string;
 			try {
-				diffStat = (execSync(`git diff --stat HEAD...${feature.branch}`, {
-					cwd: feature.worktreePath,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "ignore"],
-				}) as string).trim();
+				diffStat = (
+					execSync(`git diff --stat HEAD...${feature.branch}`, {
+						cwd: feature.worktreePath,
+						encoding: "utf-8",
+						stdio: ["ignore", "pipe", "ignore"],
+					}) as string
+				).trim();
 			} catch {
-				diffStat = (execSync("git diff --stat HEAD", {
-					cwd: feature.worktreePath,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "ignore"],
-				}) as string).trim();
+				diffStat = (
+					execSync("git diff --stat HEAD", {
+						cwd: feature.worktreePath,
+						encoding: "utf-8",
+						stdio: ["ignore", "pipe", "ignore"],
+					}) as string
+				).trim();
 			}
 
 			return this.parseDiffStat(diffStat);
@@ -618,7 +623,9 @@ export class HomePanel {
 			// Include synthetic base feature (repo root / base branch)
 			const baseFeature = ctx.featureManager.getBaseFeature(ctx.project.id);
 			const baseAgentCount = ctx.agentManager.getAgents(baseFeature.id).length;
-			const baseServiceCount = ctx.serviceManager.getServices(baseFeature.id).length;
+			const baseServiceCount = ctx.serviceManager.getServices(
+				baseFeature.id,
+			).length;
 			if (baseAgentCount > 0 || baseServiceCount > 0) {
 				allFeatures.push({
 					feature: baseFeature,

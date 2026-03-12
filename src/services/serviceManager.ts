@@ -96,7 +96,10 @@ export class ServiceManager {
 
 	refreshStatuses(featureId: string): void {
 		const lastRefresh = this.lastRefreshTime.get(featureId);
-		if (lastRefresh && Date.now() - lastRefresh < ServiceManager.REFRESH_TTL_MS) {
+		if (
+			lastRefresh &&
+			Date.now() - lastRefresh < ServiceManager.REFRESH_TTL_MS
+		) {
 			return;
 		}
 		this.lastRefreshTime.set(featureId, Date.now());
@@ -152,10 +155,7 @@ export class ServiceManager {
 		const label = this.sessionLabel(featureId);
 
 		for (const service of services) {
-			const preferredSession = this.tmux.serviceSessionName(
-				label,
-				service.id,
-			);
+			const preferredSession = this.tmux.serviceSessionName(label, service.id);
 			if (service.tmuxSession === preferredSession) {
 				continue;
 			}

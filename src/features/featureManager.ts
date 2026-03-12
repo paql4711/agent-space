@@ -3,7 +3,12 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { TERMINAL_COLOR_KEYS } from "../constants/colors";
 import type { Store } from "../storage/store";
-import type { Feature, FeatureStatus, GitAwareStatus, IsolationMode } from "../types";
+import type {
+	Feature,
+	FeatureStatus,
+	GitAwareStatus,
+	IsolationMode,
+} from "../types";
 import { isWorktreePathSafe } from "../utils/worktreeGuard";
 import { computeGitStatus, computeGitStatusAsync } from "./featureGitStatus";
 import { normalizeFeatureName } from "./featureName";
@@ -41,14 +46,11 @@ export class FeatureManager {
 	private getBaseBranch(): string {
 		if (this.cachedBaseBranch) return this.cachedBaseBranch;
 		try {
-			this.cachedBaseBranch = execSync(
-				"git rev-parse --abbrev-ref HEAD",
-				{
-					cwd: this.repoRoot,
-					encoding: "utf-8",
-					stdio: ["ignore", "pipe", "pipe"],
-				},
-			).trim();
+			this.cachedBaseBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+				cwd: this.repoRoot,
+				encoding: "utf-8",
+				stdio: ["ignore", "pipe", "pipe"],
+			}).trim();
 		} catch {
 			this.cachedBaseBranch = "main";
 		}

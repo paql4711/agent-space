@@ -130,7 +130,7 @@ function quickAction(action, featureId) {
 		case "openGitView":
 			send("openGitView", { featureId });
 			break;
-			case "syncNames":
+		case "syncNames":
 			send("syncNames");
 			break;
 		case "refresh":
@@ -263,12 +263,20 @@ function startAutoRefresh() {
 	if (autoRefreshInterval) return;
 	autoRefreshInterval = setInterval(() => {
 		if (expandedAgents.size > 0) {
-			sendDebounced("refreshActivity", { agentIds: Array.from(expandedAgents) }, 200);
+			sendDebounced(
+				"refreshActivity",
+				{ agentIds: Array.from(expandedAgents) },
+				200,
+			);
 		}
 		if (expandedServices.size > 0) {
-			sendDebounced("refreshServiceActivity", {
-				serviceIds: Array.from(expandedServices),
-			}, 200);
+			sendDebounced(
+				"refreshServiceActivity",
+				{
+					serviceIds: Array.from(expandedServices),
+				},
+				200,
+			);
 		}
 	}, 10000);
 }

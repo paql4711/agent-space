@@ -113,7 +113,10 @@ export async function computeGitStatusAsync(
 	const { execAsync } = await import("../utils/platform");
 	const { featureBranch, baseBranch, worktreePath, repoRoot } = input;
 
-	const gitOpts = { encoding: "utf-8" as const, stdio: ["ignore", "pipe", "pipe"] as const };
+	const gitOpts = {
+		encoding: "utf-8" as const,
+		stdio: ["ignore", "pipe", "pipe"] as const,
+	};
 
 	async function gitCmd(command: string, cwd: string): Promise<string> {
 		const { stdout } = await execAsync(command, { cwd, ...gitOpts });
@@ -136,7 +139,10 @@ export async function computeGitStatusAsync(
 
 	// Check merged
 	try {
-		const featureSha = await gitCmd(`git rev-parse "${featureBranch}"`, repoRoot);
+		const featureSha = await gitCmd(
+			`git rev-parse "${featureBranch}"`,
+			repoRoot,
+		);
 		const baseSha = await gitCmd(`git rev-parse "${baseBranch}"`, repoRoot);
 		if (featureSha !== baseSha) {
 			await gitCmd(

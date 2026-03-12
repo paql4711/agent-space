@@ -129,9 +129,7 @@ describe("TmuxIntegration", () => {
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux set-option -t "my-session" mouse on',
 			);
-			expect(mockExec).toHaveBeenCalledWith(
-				"tmux show -sv terminal-overrides",
-			);
+			expect(mockExec).toHaveBeenCalledWith("tmux show -sv terminal-overrides");
 			expect(mockExec).toHaveBeenCalledWith(
 				'tmux set -sa terminal-overrides ",*:smcup@:rmcup@:XM@"',
 			);
@@ -181,9 +179,7 @@ describe("TmuxIntegration", () => {
 				}
 				return "";
 			});
-			expect(() =>
-				fresh.configureServiceSession("svc-session"),
-			).not.toThrow();
+			expect(() => fresh.configureServiceSession("svc-session")).not.toThrow();
 		});
 	});
 

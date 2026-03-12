@@ -15,9 +15,9 @@ import {
 	ICON_STOP,
 	ICON_SYNC,
 } from "../constants/icons";
-import {
+import type {
+	ProjectContext,
 	ProjectManager,
-	type ProjectContext,
 } from "../projects/projectManager";
 import type { ServiceManager } from "../services/serviceManager";
 import type { Agent, Feature, GitAwareStatus, Service } from "../types";
@@ -25,10 +25,14 @@ import type { FeatureManager } from "./featureManager";
 
 function gitStatusLabel(status: GitAwareStatus): string {
 	switch (status) {
-		case "new": return "New";
-		case "modified": return "Modified";
-		case "ahead": return "Ahead";
-		case "merged": return "Merged";
+		case "new":
+			return "New";
+		case "modified":
+			return "Modified";
+		case "ahead":
+			return "Ahead";
+		case "merged":
+			return "Merged";
 	}
 }
 
@@ -164,9 +168,11 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			for (const ctx of contexts) {
 				for (const feature of ctx.featureManager.getFeatures()) {
 					tasks.push(
-						ctx.featureManager.getFeatureGitStatusAsync(feature).then((status) => {
-							statusMap.set(feature.id, status);
-						}),
+						ctx.featureManager
+							.getFeatureGitStatusAsync(feature)
+							.then((status) => {
+								statusMap.set(feature.id, status);
+							}),
 					);
 				}
 			}
@@ -201,10 +207,32 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 			}
 			await Promise.all(asyncTasks);
 
-			interface SidebarAgent { id: string; name: string; status: string; toolId?: string; lastError?: string }
-			interface SidebarService { id: string; name: string; command: string; status: string }
-			interface SidebarFeature { id: string; branch: string; gitStatus?: string; isBase: boolean; agents: SidebarAgent[]; services: SidebarService[] }
-			interface SidebarProject { id: string; name: string; features: SidebarFeature[] }
+			interface SidebarAgent {
+				id: string;
+				name: string;
+				status: string;
+				toolId?: string;
+				lastError?: string;
+			}
+			interface SidebarService {
+				id: string;
+				name: string;
+				command: string;
+				status: string;
+			}
+			interface SidebarFeature {
+				id: string;
+				branch: string;
+				gitStatus?: string;
+				isBase: boolean;
+				agents: SidebarAgent[];
+				services: SidebarService[];
+			}
+			interface SidebarProject {
+				id: string;
+				name: string;
+				features: SidebarFeature[];
+			}
 
 			const projects: SidebarProject[] = contexts.map((ctx) => {
 				const baseFeature = ctx.featureManager.getBaseFeature(ctx.project.id);
@@ -216,8 +244,19 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 						id: baseFeature.id,
 						branch: baseFeature.branch,
 						isBase: true,
-						agents: baseAgents.map((a) => ({ id: a.id, name: a.name, status: a.status, toolId: a.toolId, lastError: a.lastError })),
-						services: baseServices.map((s) => ({ id: s.id, name: s.name, command: s.command, status: s.status })),
+						agents: baseAgents.map((a) => ({
+							id: a.id,
+							name: a.name,
+							status: a.status,
+							toolId: a.toolId,
+							lastError: a.lastError,
+						})),
+						services: baseServices.map((s) => ({
+							id: s.id,
+							name: s.name,
+							command: s.command,
+							status: s.status,
+						})),
 					},
 				];
 
@@ -229,15 +268,29 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 						branch: feature.branch,
 						gitStatus: statusMap.get(feature.id),
 						isBase: false,
-						agents: agents.map((a) => ({ id: a.id, name: a.name, status: a.status, toolId: a.toolId, lastError: a.lastError })),
-						services: services.map((s) => ({ id: s.id, name: s.name, command: s.command, status: s.status })),
+						agents: agents.map((a) => ({
+							id: a.id,
+							name: a.name,
+							status: a.status,
+							toolId: a.toolId,
+							lastError: a.lastError,
+						})),
+						services: services.map((s) => ({
+							id: s.id,
+							name: s.name,
+							command: s.command,
+							status: s.status,
+						})),
 					});
 				}
 
 				return { id: ctx.project.id, name: ctx.project.name, features };
 			});
 
-			this._view.webview.postMessage({ type: "sidebarUpdate", data: { projects } });
+			this._view.webview.postMessage({
+				type: "sidebarUpdate",
+				data: { projects },
+			});
 		} catch {
 			// Webview may have been disposed
 		}
@@ -362,7 +415,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		);
 	}
 
-	private getHtml(statusMap?: Map<string, import("../types").GitAwareStatus>): string {
+	private getHtml(
+		statusMap?: Map<string, import("../types").GitAwareStatus>,
+	): string {
 		const webview = this._view?.webview;
 		if (!webview) return "";
 		const cssUri = webview.asWebviewUri(
@@ -412,7 +467,10 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 </html>`;
 	}
 
-	private renderProjectSection(ctx: ProjectContext, statusMap?: Map<string, import("../types").GitAwareStatus>): string {
+	private renderProjectSection(
+		ctx: ProjectContext,
+		statusMap?: Map<string, import("../types").GitAwareStatus>,
+	): string {
 		const { project } = ctx;
 		const baseFeature = ctx.featureManager.getBaseFeature(project.id);
 		const baseCard = this.renderBaseCard(
@@ -424,7 +482,13 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 		const features = ctx.featureManager.getFeatures();
 		const featureCards = features
 			.map((f) =>
-				this.renderFeatureCard(f, ctx.agentManager, ctx.serviceManager, ctx.featureManager, statusMap),
+				this.renderFeatureCard(
+					f,
+					ctx.agentManager,
+					ctx.serviceManager,
+					ctx.featureManager,
+					statusMap,
+				),
 			)
 			.join("");
 
@@ -453,7 +517,9 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 	): string {
 		const agents = agentManager.getAgents(feature.id);
 		const services = serviceManager.getServices(feature.id);
-		const totalCount = agents.filter((a) => a.status !== "done").length + services.filter((s) => s.status === "running").length;
+		const totalCount =
+			agents.filter((a) => a.status !== "done").length +
+			services.filter((s) => s.status === "running").length;
 
 		const bodyHtml = this.renderCardBody(feature, agents, services);
 
@@ -485,9 +551,12 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 	): string {
 		const agents = agentManager.getAgents(feature.id);
 		const services = serviceManager.getServices(feature.id);
-		const totalCount = agents.filter((a) => a.status !== "done").length + services.filter((s) => s.status === "running").length;
+		const totalCount =
+			agents.filter((a) => a.status !== "done").length +
+			services.filter((s) => s.status === "running").length;
 
-		const gitStatus = statusMap?.get(feature.id) ?? featureManager.getFeatureGitStatus(feature);
+		const gitStatus =
+			statusMap?.get(feature.id) ?? featureManager.getFeatureGitStatus(feature);
 		const bodyHtml = this.renderCardBody(feature, agents, services);
 
 		return `
@@ -599,10 +668,7 @@ export class FeatureSidebarProvider implements vscode.WebviewViewProvider {
 	${disabledHtml}`;
 	}
 
-	private renderServicesSection(
-		feature: Feature,
-		services: Service[],
-	): string {
+	private renderServicesSection(feature: Feature, services: Service[]): string {
 		if (services.length === 0) return "";
 
 		const activeServices = services.filter((s) => s.status === "running");

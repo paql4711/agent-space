@@ -9,7 +9,7 @@ const LEGACY_TMUX_SESSION_PREFIX = "companion";
  * `-t` lookups when they appear inside a session name.
  */
 function sanitizeSessionName(name: string): string {
-	return name.replace(/[:.\/]/g, "_");
+	return name.replace(/[:./]/g, "_");
 }
 
 export class TmuxIntegration {
